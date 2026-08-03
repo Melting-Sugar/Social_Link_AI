@@ -1,0 +1,32 @@
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Node / Next.js (frontend)
+node_modules/
+.next/
+out/
+.pnpm-store/
+
+# Python / FastAPI (backend)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local audio scratch (raw audio must never persist per docs/legal/privacy-policy.md — belt-and-suspenders against accidental local dev writes)
+*.wav
+*.webm
+
+# Claude Code local-only settings (personal tool-permission state, not shared project config)
+.claude/settings.local.json
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/

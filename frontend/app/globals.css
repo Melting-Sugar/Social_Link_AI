@@ -1,0 +1,102 @@
+@import "tailwindcss";
+
+/* §11.8 / feedback_artifact_dark_mode_default: tokens always start light,
+   regardless of OS preference — dark is an explicit opt-in via the
+   settings toggle (`.dark` class on <html>, set by lib/theme.ts), never
+   `prefers-color-scheme`. */
+:root {
+  --ink: #221f1b;
+  --ink-soft: #6b6259;
+  --bg: #fbf7f0;
+  --surface: #ffffff;
+  --surface-sunken: #f2ead9;
+  --line: #ebdfc8;
+  --coral: #f6c3b1;
+  --coral-strong: #eda78f;
+  --coral-tint: #fce8e0;
+  --gold: #f3da9c;
+  --gold-strong: #e8c278;
+  --gold-tint: #faf1db;
+  --good: #b7dcc0;
+  --caution: #eeb6a7;
+  --caution-tint: #faece7;
+  --on-accent: #221f1b;
+  --scene-1: #f3caae;
+  --scene-2: #eeda9f;
+  --scene-3: #f0c7d1;
+  --scene-4: #f2d0ab;
+  --scene-5: #e6c7d6;
+  --shadow-app: 0 18px 40px -22px rgba(34, 31, 27, 0.28);
+  /* §11.8: rounded-gothic stack — the one visual decision the user
+     specifically praised ("丸ゴシック系フォントは素晴らしいです"). CJK
+     faces can't be inlined as webfonts, so this is the "warmth without
+     being AI-generic" technique for Japanese type (see
+     feedback_pastel_color_design / social_link_app_project memory). */
+  --font-app: ui-rounded, "Hiragino Maru Gothic ProN", "Yu Gothic Medium", "YuGothic",
+    "Noto Sans JP", "Hiragino Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+:root.dark {
+  --ink: #ede8e1;
+  --ink-soft: #b3aa9e;
+  --bg: #1c1815;
+  --surface: #26211c;
+  --surface-sunken: #171310;
+  --line: #38312a;
+  --coral: #d98d76;
+  --coral-strong: #e6a48f;
+  --coral-tint: #3d241c;
+  --gold: #d3a95f;
+  --gold-strong: #e2bd7c;
+  --gold-tint: #3a2a15;
+  --good: #7fae8d;
+  --caution: #cf8f7f;
+  --caution-tint: #3a2620;
+  --on-accent: #221f1b;
+  --scene-1: #d39674;
+  --scene-2: #caad69;
+  --scene-3: #cb92a2;
+  --scene-4: #d19f71;
+  --scene-5: #b79baa;
+  --shadow-app: 0 18px 44px -20px rgba(0, 0, 0, 0.6);
+}
+
+@theme inline {
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-line: var(--line);
+  --color-coral: var(--coral);
+  --color-coral-strong: var(--coral-strong);
+  --color-coral-tint: var(--coral-tint);
+  --color-gold: var(--gold);
+  --color-gold-strong: var(--gold-strong);
+  --color-gold-tint: var(--gold-tint);
+  --color-good: var(--good);
+  --color-caution: var(--caution);
+  --color-caution-tint: var(--caution-tint);
+  --color-on-accent: var(--on-accent);
+  --color-scene-1: var(--scene-1);
+  --color-scene-2: var(--scene-2);
+  --color-scene-3: var(--scene-3);
+  --color-scene-4: var(--scene-4);
+  --color-scene-5: var(--scene-5);
+  --shadow-app: var(--shadow-app);
+  --font-sans: var(--font-app);
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-app);
+  -webkit-font-smoothing: antialiased;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}

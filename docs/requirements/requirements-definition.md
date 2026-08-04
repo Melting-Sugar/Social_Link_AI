@@ -281,6 +281,20 @@ social-link-app/
     - `GET /api/users/me`（D-①の「アカウント情報」表示の取得元）が**未追加のまま残っていたことを新たに発見**、追加した（11.5参照）
     - **概要（1章）の「リアルタイムで対話を支援する」という表現を修正**：11章確定のバッチ方式（録音→停止→解析→表示）と語感がズレており、外部説明として使うと期待値がズレるとの指摘を受け、「対面での会話をその場で録音・分析し」に修正（1章参照）
     - **AI推定の伝え方を新規確定**：話者分離→話者識別→プロソディ→LLMという直列推論の誤差が積み重なるリスクは4.1に既述の通りだが、「支援のつもりが誤判定で不安を増幅しかねない」というASD支援特有の懸念を踏まえ、解釈が介在する出力（会話の流れ・相手の反応・関係性の距離感）を断定調から推定を示す言い回しに変更し、分析結果画面に「AIによる推定です」という一言を追加（モックアップ反映済み）。B-①発言チェックの判定文言など今後実装する画面にも同じ考え方を適用する（11.11参照）
+19. ✅**プロジェクト初期セットアップ（コーディング開始、2026-08-04）**：backend/・frontend/・infra/の雛形を実装し、バックエンドは`uv run uvicorn`起動・全19エンドポイント疎通・ruffクリーン、フロントエンドは`npm run build`・lintクリーンをそれぞれ確認済み。実装の過程で以下を新たに決定・修正した。
+    - **`PasswordResetToken`モデルを追加**：11.9のデータモデル一覧に無かったが、11.2確定の「使い切りのリセットトークン」を実現するには`RefreshToken`と同様にDB照合による失効管理が必要なため、実装の自然な帰結として追加（`RefreshToken`と同型：token_hash・expires_at・used_at）
+    - **`GET /api/conversations/{id}`を追加**：11.5のエンドポイント一覧に無かったが、11.4の「リロードしても会話が失われない」を満たすには会話の場面（scene）等をIDから再取得する手段が必須なため追加
+    - **リフレッシュトークンCookieの`path`を`/api/auth`から`/`に修正**：フロントエンドのproxy.ts（認証ガード）がこのCookieの有無を見て未ログイン判定を行うが、`path=/api/auth`のままではフロントエンドの画面リクエストにCookieが一切付与されず機能しないことが実装時に判明。`COOKIE_DOMAIN`設定も追加し、本番でのサブドメイン共有（5章）に備えた
+    - **Next.js 16の破壊的変更に対応**：`middleware.ts`が`proxy.ts`（`export function proxy(...)`）に名称変更されていたため、11.4の記載を読み替えて対応。Tailwind CSSもv4のCSS-first設定（`tailwind.config.ts`ではなく`globals.css`内の`@theme`）を使用
+    - **フロントエンドのAI推定表示・話者識別失敗時のエラー文言を実装**：11.11の方針をA-④・A-⑤・B-①の実装に反映。§12の自分/相手判定に失敗した場合の専用エラー文言（11.7には無かったケース）を新規に追加
+    - **ローカル開発環境**：Node.js v18では動作しないため（Next.js 16の要件は`>=20.9.0`）nvmでv22を導入・既定化。Python側は`uv`を導入
+    - この時点でプロソディ・話者識別（実モデル）は未接続（次のステップ#1・#2のPoC待ち。それぞれ`PROSODY_PROVIDER=none`・`SPEAKER_ID_PROVIDER=none`で動作し、話者識別が使えない場合は解析が明示的なエラーで失敗する設計）。DBマイグレーション（Alembicの初回リビジョン）は、この環境にPostgreSQLが無く生成できなかったため未実施（`docker compose up -d postgres`後に`uv run alembic revision --autogenerate`が必要）
+20. ✅**実際にローカルで動かして発見・修正した3件の実行時バグ（2026-08-04、確定事項19と同日）**：Homebrewでpostgresql@17・redisを導入し、実際にDBマイグレーションを生成・適用してAPIサーバーとフロントエンドを起動、ブラウザ操作を含めE2Eで動作確認した。lint/buildでは検出できない実行時ロジックの誤りを3件発見・修正済み。
+    - **通知メール送信の失敗が新規登録そのものを失敗させていた**：`auth_service.register()`が登録完了メール送信を無防備に呼び出しており、Resend APIキー未設定などでメール送信が失敗すると新規登録リクエスト全体が500エラーになっていた（DBのロールバック自体は正しく動作し、不整合データは残らないが、機能としては「登録できない」状態）。登録完了・ユーザー名再通知・パスワード再設定の3箇所とも、メール送信失敗をログに残しつつ握りつぶす方式に修正（11.2のエンドユーザー列挙対策の観点でも、メール基盤の障害でエラーの出方が変わるのは望ましくないため）
+    - **`created_at`以外の日時カラムが軒並みタイムゾーン情報を持たない設定だった**：`security.py`側は一貫してタイムゾーン付き（UTC）の日時を生成しているのに対し、SQLAlchemyモデル側は`DateTime(timezone=True)`の指定漏れで大半のカラムがタイムゾーンなし設定になっており、リフレッシュトークンの最初の書き込みで例外が発生した。5つのモデルファイルを修正し、未リリースだった初回マイグレーションを作り直した
+    - **同一秒内に発行したJWTが衝突しうる設計だった**：HS256の署名は決定的で、`iat`・`exp`は秒単位に丸められるため、同じユーザーに対して同一秒内に発行された2つのトークン（例：新規登録の直後にログインする、という実際にありうる操作）が完全に同一の文字列になり、`RefreshToken.token_hash`の一意制約違反を起こしていた。`security.py`の各トークン発行関数にランダムな`jti`（JWT ID）を追加して解消
+    - 修正後、ブラウザ操作を含め「新規登録→ログイン→トークン更新→ログアウト→ログアウト後の更新失敗→パスワードを忘れた場合（列挙耐性込み）→アカウント削除（カスケード削除をDBで確認）」の一連の流れが実際に動作することを確認済み
+
 ### 残る未決事項
 
 1. 「場面」プリセットの中身は5項目（学校・大学／職場／初対面／友人との会話／恋愛・気になる人）に確定。プロンプトへの反映方法は実装時に詰める
@@ -484,10 +498,12 @@ STTの話者分離（diarization）は「話者1」「話者2」のように音�
 
 ## 13. 次のステップ
 
-1. プロソディベンダーPoC（Empath / Imentiv AI / audEERING / AmiVoice ESASの比較。バッチ方式確定によりAmiVoiceも対象に）
-2. 話者識別モデルのPoC（SpeechBrain ECAPA-TDNN vs pyannote-audio、精度と推論速度の比較）
+1. プロソディベンダーPoC（Empath / Imentiv AI / audEERING / AmiVoice ESASの比較。バッチ方式確定によりAmiVoiceも対象に）。実装は`PROSODY_PROVIDER`環境変数で切替可能な状態で完了済み（`backend/app/integrations/prosody/`）
+2. 話者識別モデルのPoC（SpeechBrain ECAPA-TDNN vs pyannote-audio、精度と推論速度の比較）。SpeechBrain ECAPA-TDNNは暫定実装済み（`backend/app/integrations/speaker_id/ecapa_local.py`、`uv sync --extra speaker-id`が必要）。PoCの結果次第でpyannote-audio版アダプタを追加
 3. 利用規約・プライバシーポリシーの草案の内容確認・専門家レビュー・運営者情報等プレースホルダーの穴埋め（docs/legal/参照）
-4. プロジェクトの初期セットアップ（依存関係導入、CI設定等。Gitリポジトリは初期化・リモート追加済み：https://github.com/Melting-Sugar/Social_Link_AI）
+4. ローカルDB環境の用意とAlembic初回マイグレーション生成：`docker compose -f infra/docker-compose.yml up -d postgres` → `cd backend && uv run alembic revision --autogenerate -m "initial schema" && uv run alembic upgrade head`（この開発環境にPostgreSQLが無く未実施）
+5. 各種APIキーの取得・設定：`backend/.env`に`ANTHROPIC_API_KEY`・`AZURE_SPEECH_KEY`・`RESEND_API_KEY`を設定（`.env.example`参照）。設定後、実際に会話サポート・発言チェックの一連の流れを手元で動作確認する
+6. CI設定（GitHub Actions等。lintは`backend`: `uv run ruff check`、`frontend`: `npm run lint` / `npm run build`が現状のローカルでの確認コマンド）
 
 ### 完了済み（2026-08-04）
 
@@ -501,3 +517,4 @@ STTの話者分離（diarization）は「話者1」「話者2」のように音�
 - **初回コミット・push実施（2026-08-04）**：要件定義・法務ドラフト一式をリポジトリにコミットし、リモート（GitHub）へpush済み
 - **2回目の着手前レビューで発見した6件の抜けを解消**：認証系の欠落エンドポイント（refresh/logout）、データ削除系の欠落エンドポイント（records/{id}・users/me・voice-profile）とUI導線、録音アップロードの一時ストレージ受け渡し方式、Celeryワーカーの非同期処理橋渡し方法、フロントエンドのデータ取得・フォームライブラリを確定（詳細は確定事項17参照）
 - **3回目の着手前レビュー（ユーザー指摘への対応）**：`GET /api/users/me`の欠落を新規発見・追加。概要（1章）の「リアルタイム」表現をバッチ方式に即した表現へ修正。AI推定の伝え方の方針を新規確定し、モックアップの分析結果画面に反映（詳細は確定事項18・11.11参照）
+- **プロジェクトの初期セットアップ（コーディング開始）**：`backend/`（FastAPI、全19エンドポイント・モデル・Celeryワーカー実装済み、`uv run uvicorn`起動確認・ruffクリーン）、`frontend/`（Next.js 16、L-①〜⑤・E-①・A-①〜⑥・B-①・C-①・D-①の全画面実装済み、`npm run build`・lintクリーン、モックアップの配色トークンをTailwind CSS v4の`@theme`として移植）、`infra/docker-compose.yml`（postgres/redis/api/worker/beat）を実装。実装時に見つかった追加の決定事項は確定事項19を参照。プロソディ・話者識別の実ベンダー/モデル接続とDBマイグレーション生成は次のステップ#1・#2・#4として残る

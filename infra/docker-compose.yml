@@ -1,0 +1,88 @@
+# Local dev only. §5/§6: one backend image serves three roles (api/
+# worker/beat) via CMD override — they share the same code and
+# dependencies, just different entrypoints. §11.5: api and worker share
+# the `audio-temp` volume for the local-disk handoff of uploaded audio.
+name: social-link-app
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: social_link
+      POSTGRES_PASSWORD: social_link
+      POSTGRES_DB: social_link
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U social_link"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ../backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - ../backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://social_link:social_link@postgres:5432/social_link
+      REDIS_URL: redis://redis:6379/0
+      TEMP_AUDIO_DIR: /audio-temp
+    volumes:
+      - audio-temp:/audio-temp
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ../backend
+    command: celery -A app.core.celery_app worker --loglevel=info
+    env_file:
+      - ../backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://social_link:social_link@postgres:5432/social_link
+      REDIS_URL: redis://redis:6379/0
+      TEMP_AUDIO_DIR: /audio-temp
+    volumes:
+      - audio-temp:/audio-temp
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  beat:
+    build:
+      context: ../backend
+    command: celery -A app.core.celery_app beat --loglevel=info
+    env_file:
+      - ../backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://social_link:social_link@postgres:5432/social_link
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  audio-temp:

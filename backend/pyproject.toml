@@ -1,0 +1,49 @@
+[project]
+name = "social-link-app-backend"
+version = "0.1.0"
+description = "Social Link AI backend (FastAPI)"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic[email]>=2.9",
+    "pydantic-settings>=2.6",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "asyncpg>=0.30",
+    "alembic>=1.14",
+    "argon2-cffi>=23.1",
+    "pyjwt>=2.9",
+    "celery[redis]>=5.4",
+    "redis>=5.2",
+    "httpx>=0.27",
+    "python-multipart>=0.0.12",
+    "anthropic>=0.39",
+    "resend>=2.5",
+    "unicodedata2>=15.1",
+    "azure-cognitiveservices-speech>=1.40",
+]
+
+[project.optional-dependencies]
+# Heavy PyTorch-based local inference for §12.3 speaker identification.
+# Kept optional: the model choice (SpeechBrain vs pyannote-audio) is still
+# PoC-gated (requirements §13 next-steps #2) — install this group only once
+# that comparison is done and ECAPA-TDNN is confirmed as the pick.
+speaker-id = [
+    "speechbrain>=1.0",
+    "torch>=2.4",
+    "torchaudio>=2.4",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.7",
+]
+
+[tool.ruff]
+line-length = 100
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

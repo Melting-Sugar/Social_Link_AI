@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "frontend-dev",
+      "runtimeExecutable": "/Users/ichikawakouta/.nvm/versions/node/v22.23.2/bin/node",
+      "runtimeArgs": ["frontend/node_modules/.bin/next", "dev", "frontend"],
+      "port": 3000
+    }
+  ]
+}

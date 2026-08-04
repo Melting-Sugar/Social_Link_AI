@@ -8,7 +8,8 @@ from app.audio.temp_storage import delete_temp_file
 from app.integrations.llm.claude import ClaudeClient
 from app.integrations.prosody.factory import get_prosody_provider
 from app.integrations.speaker_id.factory import get_speaker_id_provider
-from app.integrations.stt.azure_speech import AzureSpeechProvider
+from app.integrations.stt.amivoice import extract_prosody_scores
+from app.integrations.stt.factory import get_stt_provider
 from app.models.conversation import Conversation
 from app.models.recording import RecordingStatus
 from app.repositories.conversation_repository import ConversationRepository
@@ -22,14 +23,19 @@ class AnalysisService:
     """§3.2's 3-layer pipeline + §12's self/other resolution, orchestrated
     for one Recording. Runs inside a Celery task (app/workers/
     analysis_worker.py), never called directly from the API — the upload
-    endpoint only kicks the job off (§11.5)."""
+    endpoint only kicks the job off (§11.5).
+
+    §12.3 確定事項25: with the default STT_PROVIDER=amivoice, the STT and
+    prosody layers collapse into a single vendor call (AmiVoice ESAS) —
+    the separate ProsodyProvider stage only actually runs as a fallback
+    (STT_PROVIDER=azure or a future non-bundled STT vendor)."""
 
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
         self._recordings = RecordingRepository(session)
         self._conversations = ConversationRepository(session)
         self._voice_profiles = VoiceProfileRepository(session)
-        self._stt = AzureSpeechProvider()
+        self._stt = get_stt_provider()
         self._prosody = get_prosody_provider()
         self._speaker_id = get_speaker_id_provider()
         self._llm = ClaudeClient()
@@ -82,16 +88,30 @@ class AnalysisService:
 
             # 4. Prosody — on the OTHER speaker's clip specifically: the
             # value proposition (§2, §3.1) is reading the conversation
-            # partner's reaction, not the user's own tone.
+            # partner's reaction, not the user's own tone. §12.3 確定事項25:
+            # AmiVoice bundles ESAS sentiment into the same STT call, so
+            # when available it's used directly instead of a second vendor
+            # call (slice_audio_by_speaker's per-speaker clip is only
+            # needed as a fallback path here — §12's self/other resolution
+            # above still needs it regardless of STT vendor).
             prosody_scores: dict[str, float] = {}
             if other_label is not None:
-                try:
-                    prosody_result = await self._prosody.analyze(speaker_clips[other_label])
-                    prosody_scores = prosody_result.scores
-                except NotImplementedError:
-                    # §3.6 PoC not run yet — proceed without prosody input,
-                    # not as a failure (Realtime-only-style degradation).
-                    prosody_scores = {}
+                if stt_result.raw_vendor_response is not None:
+                    other_segments = [
+                        seg for seg in stt_result.segments if seg.speaker_label == other_label
+                    ]
+                    prosody_scores = extract_prosody_scores(
+                        stt_result.raw_vendor_response, other_segments
+                    )
+                if not prosody_scores:
+                    try:
+                        prosody_result = await self._prosody.analyze(speaker_clips[other_label])
+                        prosody_scores = prosody_result.scores
+                    except NotImplementedError:
+                        # §3.6 no separate prosody vendor active — proceed
+                        # without prosody input, not as a failure
+                        # (Realtime-only-style degradation).
+                        prosody_scores = {}
 
             # 5. Full interpretive report (Sonnet 5, §11.11-compliant prompt)
             report = await self._llm.generate_conversation_report(

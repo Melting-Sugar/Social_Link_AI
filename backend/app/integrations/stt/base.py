@@ -18,6 +18,11 @@ class STTSegment:
 class STTResult:
     segments: list[STTSegment]
     full_transcript: str
+    # Populated only by providers that bundle prosody/sentiment data into
+    # the same call as transcription (e.g. AmiVoice ESAS, §12.3 確定事項25) —
+    # mirrors ProsodyResult.raw_vendor_response. AnalysisService checks for
+    # this to skip a redundant separate ProsodyProvider call.
+    raw_vendor_response: dict | None = None
 
 
 class STTProvider(ABC):

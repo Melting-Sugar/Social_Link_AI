@@ -12,7 +12,7 @@ import {
   type RecordingResponse,
 } from "@/lib/conversation-api";
 
-const MAX_RECORDING_SECONDS = 1800; // §11.3
+const MAX_RECORDING_SECONDS = 60; // §11.3, 確定事項28 — capped for MVP to keep AmiVoice analysis latency tolerable
 
 function formatElapsed(seconds: number): string {
   const m = Math.floor(seconds / 60);

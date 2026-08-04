@@ -61,9 +61,17 @@ class Settings(BaseSettings):
     # pyannote/embedding is gated on Hugging Face Hub — needed only for
     # SPEAKER_ID_PROVIDER=pyannote_local (§12.3 PoC candidate #2).
     hf_token: str = ""
+    # 確定事項25-28 — AmiVoice ESAS採用に伴うSTTベンダー。
+    amivoice_api_key: str = ""
 
-    # §3.6 — prosody vendor is PoC-gated (next-steps #1); provider is
-    # selected via env var so swapping candidates never touches call sites.
+    # §12.3 確定事項25 — AmiVoice ESASは音声認識と不可分なため既定はAmiVoice
+    # (STT自体もAmiVoiceが兼ねる)。Azureは非アクティブ化した実装として残す。
+    stt_provider: Literal["azure", "amivoice"] = "amivoice"
+
+    # §3.6 確定事項27 — Empathは実データ検証の結果不採用。AmiVoice以外の
+    # 単独プロソディベンダーは現状採用しておらず、STT_PROVIDER=amivoiceの
+    # 場合はAnalysisServiceがSTTに同梱されたESASの結果を使うため、この設定
+    # 自体が使われない（STT_PROVIDER=azureに戻した場合のみ有効になる）。
     prosody_provider: Literal["empath", "imentiv", "audeering", "none"] = "none"
 
     # §12.3 — speaker-ID model is PoC-gated (next-steps #2). "none" keeps the
@@ -79,8 +87,10 @@ class Settings(BaseSettings):
     # upgrade path to object storage for horizontal scaling).
     temp_audio_dir: str = "/tmp/social-link-audio"
 
-    # §11.3 / §3.4
-    max_recording_seconds: int = 1800
+    # §11.3 / §3.4 — 確定事項28: MVPは60秒に制限（AmiVoiceの単発リクエスト
+    # 処理時間がリアルタイム比1倍程度で安定している範囲に収める。録音中
+    # チャンク並行投稿による長時間対応は次のステップ#1のベンダー確認待ち）
+    max_recording_seconds: int = 60
 
 
 @lru_cache

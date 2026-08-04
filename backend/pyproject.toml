@@ -25,13 +25,15 @@ dependencies = [
 
 [project.optional-dependencies]
 # Heavy PyTorch-based local inference for §12.3 speaker identification.
-# Kept optional: the model choice (SpeechBrain vs pyannote-audio) is still
-# PoC-gated (requirements §13 next-steps #2) — install this group only once
-# that comparison is done and ECAPA-TDNN is confirmed as the pick.
+# Kept optional so the base install/boot stays fast and light — pull this
+# in only if actually exercising SPEAKER_ID_PROVIDER=ecapa_local or
+# pyannote_local. Both candidates from the §13 next-steps #2 PoC are
+# included (see requirements-definition.md §12.3 for the comparison).
 speaker-id = [
     "speechbrain>=1.0",
     "torch>=2.4",
     "torchaudio>=2.4",
+    "pyannote.audio>=3.3",
 ]
 
 [dependency-groups]

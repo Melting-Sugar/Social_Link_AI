@@ -2,6 +2,10 @@
 .env
 .env.*
 !.env.example
+# .env.keys (project root): the single canonical file for every
+# third-party vendor API key — never commit the real one, only the
+# template (see docs/requirements/requirements-definition.md).
+!.env.keys.example
 
 # Node / Next.js (frontend)
 node_modules/

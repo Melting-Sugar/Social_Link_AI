@@ -1,11 +1,28 @@
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Project root, resolved from this file's own location rather than the
+# process's cwd — the same class of bug found in frontend/lib/
+# read-legal-doc.ts (cwd varies with how the process is launched; a
+# path relative to __file__ doesn't).
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
+# .env.keys (project root, gitignored): the single canonical file for
+# every third-party vendor API key (Anthropic/Azure Speech/Resend) — see
+# .env.keys.example and requirements-definition.md for why this lives
+# outside backend/.env. Loaded first so backend/.env (app-level config:
+# DB URL, JWT secret, CORS, ...) can still override in local dev if ever
+# needed.
+_ENV_KEYS_PATH = _PROJECT_ROOT / ".env.keys"
+
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=(_ENV_KEYS_PATH, ".env"), env_file_encoding="utf-8", extra="ignore"
+    )
 
     environment: Literal["dev", "prod"] = "dev"
 
@@ -34,12 +51,16 @@ class Settings(BaseSettings):
     # CORS — frontend/backend are separate origins (§5's subdomain note)
     cors_allowed_origins: list[str] = ["http://localhost:3000"]
 
-    # External vendors
+    # External vendor API keys — values come from .env.keys (project root),
+    # never from backend/.env (see _ENV_KEYS_PATH above).
     anthropic_api_key: str = ""
     azure_speech_key: str = ""
     azure_speech_region: str = "japaneast"
     resend_api_key: str = ""
     email_from_address: str = "noreply@example.com"
+    # pyannote/embedding is gated on Hugging Face Hub — needed only for
+    # SPEAKER_ID_PROVIDER=pyannote_local (§12.3 PoC candidate #2).
+    hf_token: str = ""
 
     # §3.6 — prosody vendor is PoC-gated (next-steps #1); provider is
     # selected via env var so swapping candidates never touches call sites.
@@ -47,7 +68,7 @@ class Settings(BaseSettings):
 
     # §12.3 — speaker-ID model is PoC-gated (next-steps #2). "none" keeps the
     # base app runnable without the optional heavy PyTorch dependency group.
-    speaker_id_provider: Literal["ecapa_local", "none"] = "none"
+    speaker_id_provider: Literal["ecapa_local", "pyannote_local", "none"] = "none"
 
     # §4.2 — HybridPipeline is the recommended/default path; RealtimeOnly is
     # documented but not yet implemented (see integrations/llm).

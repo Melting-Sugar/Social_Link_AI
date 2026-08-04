@@ -2,6 +2,12 @@
 # worker/beat) via CMD override — they share the same code and
 # dependencies, just different entrypoints. §11.5: api and worker share
 # the `audio-temp` volume for the local-disk handoff of uploaded audio.
+#
+# ../.env.keys is listed explicitly in each service's env_file: backend
+# config.py resolves that file's path from its own location on the host
+# filesystem, which doesn't exist inside the container — compose injecting
+# it as real environment variables is what actually gets the vendor keys
+# in here (see .env.keys.example at the project root).
 name: social-link-app
 
 services:
@@ -37,6 +43,7 @@ services:
     ports:
       - "8000:8000"
     env_file:
+      - ../.env.keys
       - ../backend/.env
     environment:
       DATABASE_URL: postgresql+asyncpg://social_link:social_link@postgres:5432/social_link
@@ -55,6 +62,7 @@ services:
       context: ../backend
     command: celery -A app.core.celery_app worker --loglevel=info
     env_file:
+      - ../.env.keys
       - ../backend/.env
     environment:
       DATABASE_URL: postgresql+asyncpg://social_link:social_link@postgres:5432/social_link
@@ -73,6 +81,7 @@ services:
       context: ../backend
     command: celery -A app.core.celery_app beat --loglevel=info
     env_file:
+      - ../.env.keys
       - ../backend/.env
     environment:
       DATABASE_URL: postgresql+asyncpg://social_link:social_link@postgres:5432/social_link

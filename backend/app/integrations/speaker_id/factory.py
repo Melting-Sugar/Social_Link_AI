@@ -1,6 +1,7 @@
 from app.core.config import get_settings
 from app.integrations.speaker_id.base import SpeakerIdProvider
 from app.integrations.speaker_id.ecapa_local import EcapaLocalSpeakerIdProvider
+from app.integrations.speaker_id.pyannote_local import PyannoteLocalSpeakerIdProvider
 
 
 class NullSpeakerIdProvider(SpeakerIdProvider):
@@ -19,5 +20,7 @@ def get_speaker_id_provider() -> SpeakerIdProvider:
     match get_settings().speaker_id_provider:
         case "ecapa_local":
             return EcapaLocalSpeakerIdProvider()
+        case "pyannote_local":
+            return PyannoteLocalSpeakerIdProvider()
         case _:
             return NullSpeakerIdProvider()

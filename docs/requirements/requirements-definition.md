@@ -294,6 +294,16 @@ social-link-app/
     - **`created_at`以外の日時カラムが軒並みタイムゾーン情報を持たない設定だった**：`security.py`側は一貫してタイムゾーン付き（UTC）の日時を生成しているのに対し、SQLAlchemyモデル側は`DateTime(timezone=True)`の指定漏れで大半のカラムがタイムゾーンなし設定になっており、リフレッシュトークンの最初の書き込みで例外が発生した。5つのモデルファイルを修正し、未リリースだった初回マイグレーションを作り直した
     - **同一秒内に発行したJWTが衝突しうる設計だった**：HS256の署名は決定的で、`iat`・`exp`は秒単位に丸められるため、同じユーザーに対して同一秒内に発行された2つのトークン（例：新規登録の直後にログインする、という実際にありうる操作）が完全に同一の文字列になり、`RefreshToken.token_hash`の一意制約違反を起こしていた。`security.py`の各トークン発行関数にランダムな`jti`（JWT ID）を追加して解消
     - 修正後、ブラウザ操作を含め「新規登録→ログイン→トークン更新→ログアウト→ログアウト後の更新失敗→パスワードを忘れた場合（列挙耐性込み）→アカウント削除（カスケード削除をDBで確認）」の一連の流れが実際に動作することを確認済み
+21. ✅**APIキー管理方針を確定（ユーザー指示、2026-08-04）**：①APIキーはGitHubに上げない、②APIキー管理は単一のフォルダ／ファイルに集約し必ずそこから参照する（将来、運用担当者が自分自身のアカウントでキーを取得する前提のため）という2点の指示を受け、以下の構成に変更した。
+    - プロジェクトルートに`.env.keys`（gitignore対象、サードパーティのAPIキーのみを集約：`ANTHROPIC_API_KEY`・`AZURE_SPEECH_KEY`・`AZURE_SPEECH_REGION`・`RESEND_API_KEY`）と、そのテンプレート`.env.keys.example`（追跡対象、取得先URL付きコメント）を新設
+    - `backend/.env`・`.env.example`からはAPIキー関連の行を削除（DB接続情報やJWTシークレット等、サードパーティのアカウントに紐づかないアプリ側の設定のみを残す）
+    - `backend/app/core/config.py`は`.env.keys`を`__file__`基準の絶対パスで解決して読み込む（cwdに依存させない。frontend側のlib/read-legal-doc.tsで先に対処したのと同じ問題への対処）。Docker実行時はコンテナにファイルがマウントされないため、`infra/docker-compose.yml`の各サービスに`env_file: ../.env.keys`を追加し、環境変数として注入する形で対応
+    - 実際にANTHROPIC_API_KEYを設定し、`get_settings().anthropic_api_key`が正しく読み込まれることを確認済み。発言チェック（B-①）を実キーで実際に呼び出し、安全な発言・注意が必要な発言の両方で妥当な判定・言い換え案が返ることを確認した（プロンプト設計・11.11のツール定義とも正しく機能）
+22. ✅**CI（GitHub Actions）を追加（2026-08-04）**：`.github/workflows/backend.yml`（postgresサービスコンテナ＋ruff＋pytest）・`frontend.yml`（Node 22＋lint＋build）。バックエンドは、これまでの手動E2E検証で見つけた3件のバグ（メール送信失敗によるブロック・タイムゾーン不整合・JWT衝突）をそのまま自動テスト化した`tests/integration/test_auth_flow.py`を新規作成し、専用のテストDB（`social_link_test`）に対して実行・全件パス確認済み。プロソディ・話者識別は引き続きPoC待ちのため、CIのテスト範囲には含めていない
+23. ✅**話者識別モデルPoC：SpeechBrain ECAPA-TDNN vs pyannote-audio（2026-08-04）**：合成テスト音声（macOS `say`コマンド＋`ffmpeg`で2話者×計3クリップ、16kHz mono）を用意し、両モデルを実際に動かして比較した。
+    - **SpeechBrain（ECAPA-TDNN）**：認証・アカウント登録が一切不要で、`uv sync --extra speaker-id`のみで即動作。埋め込み次元192、初回モデルロード後は1推論あたり約0.1秒。コサイン類似度は同一話者ペアで0.88、異なる話者ペアで0.20と明確に分離しており、実データでも判定に十分な精度差があることを確認した
+    - **pyannote-audio（`pyannote/embedding`）**：Hugging Face Hub上で**ゲート付きモデル**であることが実行時に判明（`GatedRepoError: 401`）。利用するにはHugging Faceアカウントの作成・モデル利用規約への同意・アクセストークン（`HF_TOKEN`）の発行が必須で、開発者個人ではなくエンドユーザー環境ごとに追加のアカウント依存が生じる。アカウント作成はエージェントが代行できない操作のため、この時点で実データ比較は未実施（公開ベンチマーク値のみで比較）
+    - **結論・採用**：公開ベンチマーク（SpeechBrain EER 0.69% vs pyannote-audio EER 2.8%）に加え、実動作確認でも精度・速度ともにSpeechBrainが良好だった。何より、12.3節でセルフホスト方式を選んだ本来の狙い（外部ベンダー・外部アカウントへの依存を無くすこと）に対し、pyannote-audioのゲート付きモデルは「Hugging Faceアカウントへの依存」という形で同種のリスクを再導入してしまう。この理由から**SpeechBrain（ECAPA-TDNN）を正式採用**とする。`SPEAKER_ID_PROVIDER`の既定値は引き続き`none`（軽量なPyTorch依存を必須にしないため）とし、有効化する場合は`SPEAKER_ID_PROVIDER=ecapa_local`と`uv sync --extra speaker-id`を明示的に指定する運用とする。pyannote-audio版アダプタ（`backend/app/integrations/speaker_id/pyannote_local.py`）は、将来`HF_TOKEN`を用意して第2の実データ比較をしたくなった場合に備え、切替可能な形で実装のみ残す
 
 ### 残る未決事項
 
@@ -489,7 +499,7 @@ STTの話者分離（diarization）は「話者1」「話者2」のように音�
 
 外部ベンダーに依存せず、**バックエンド内でオープンソースの話者埋め込みモデルをローカル推論する**方式を採用する。ベンダー廃止リスクが原理的に発生しない。
 
-- 候補：**SpeechBrain（ECAPA-TDNNモデル）**（VoxCelebベンチマークでEER 0.69%、話者識別精度98〜99%相当）または**pyannote-audio**（EER 2.8%）。いずれもテキスト非依存（決まった台詞不要）、Pythonから利用可能、Hugging Face経由で導入
+- ✅**PoC完了・採用モデル確定（2026-08-04、確定事項23参照）**：**SpeechBrain（ECAPA-TDNNモデル）**を正式採用。VoxCelebベンチマークでEER 0.69%（比較したpyannote-audioは2.8%）に加え、実データ（合成音声）でも同一話者0.88／異なる話者0.20とコサイン類似度が明確に分離することを確認済み。認証・外部アカウントが一切不要な点も、12.3節でセルフホスト方式を選んだ「外部ベンダー依存を無くす」という狙いと合致する。pyannote-audioは埋め込みモデル（`pyannote/embedding`）がHugging Face上でゲート付きのため見送り、アダプタ実装のみ`pyannote_local`として残す（`SPEAKER_ID_PROVIDER=pyannote_local`＋`HF_TOKEN`で切替可能）
 - フロー：①初回登録時に自分の声を約10〜20秒録音→埋め込みベクトルを抽出し`VoiceProfile`として保存（生音声は保存しない）。②各会話の解析時、STTの話者分離結果（話者1/話者2）それぞれから埋め込みを抽出→登録済みの自分の埋め込みとコサイン類似度で照合→類似度が高い方を「自分」、他方を「相手」とラベル付け
 - インフラ面の留意点：PyTorchベースのモデルをバックエンドで動かすため、APIのみの構成よりやや余裕を持ったCPU/メモリのホスティングを選定する必要がある
 - UI追加：初回ログイン後（または「会話サポート」を初めて利用する際）に声紋登録画面を挟む。未登録のままでは会話サポート機能（A-②以降）を開始できない設計とする（B-①発言チェック・C-①記録・D-①設定は声紋不要のため利用可能）
@@ -499,11 +509,14 @@ STTの話者分離（diarization）は「話者1」「話者2」のように音�
 ## 13. 次のステップ
 
 1. プロソディベンダーPoC（Empath / Imentiv AI / audEERING / AmiVoice ESASの比較。バッチ方式確定によりAmiVoiceも対象に）。実装は`PROSODY_PROVIDER`環境変数で切替可能な状態で完了済み（`backend/app/integrations/prosody/`）
-2. 話者識別モデルのPoC（SpeechBrain ECAPA-TDNN vs pyannote-audio、精度と推論速度の比較）。SpeechBrain ECAPA-TDNNは暫定実装済み（`backend/app/integrations/speaker_id/ecapa_local.py`、`uv sync --extra speaker-id`が必要）。PoCの結果次第でpyannote-audio版アダプタを追加
-3. 利用規約・プライバシーポリシーの草案の内容確認・専門家レビュー・運営者情報等プレースホルダーの穴埋め（docs/legal/参照）
-4. ローカルDB環境の用意とAlembic初回マイグレーション生成：`docker compose -f infra/docker-compose.yml up -d postgres` → `cd backend && uv run alembic revision --autogenerate -m "initial schema" && uv run alembic upgrade head`（この開発環境にPostgreSQLが無く未実施）
-5. 各種APIキーの取得・設定：`backend/.env`に`ANTHROPIC_API_KEY`・`AZURE_SPEECH_KEY`・`RESEND_API_KEY`を設定（`.env.example`参照）。設定後、実際に会話サポート・発言チェックの一連の流れを手元で動作確認する
-6. CI設定（GitHub Actions等。lintは`backend`: `uv run ruff check`、`frontend`: `npm run lint` / `npm run build`が現状のローカルでの確認コマンド）
+2. 利用規約・プライバシーポリシーの草案の内容確認・専門家レビュー・運営者情報等プレースホルダーの穴埋め（docs/legal/参照）
+3. `AZURE_SPEECH_KEY`・`RESEND_API_KEY`の取得・設定（`.env.keys`参照。`ANTHROPIC_API_KEY`は設定・実動作確認済み＝確定事項21）。Azure Speechキー設定後、実際に会話サポート・発言チェックの一連の流れを手元で動作確認する
+
+### 完了済み（次のステップから移動）
+
+- ✅話者識別モデルのPoC（SpeechBrain ECAPA-TDNN vs pyannote-audio）→ 確定事項23・12.3節参照
+- ✅ローカルDB環境の用意とAlembic初回マイグレーション生成（Homebrew版PostgreSQL 17で実施済み）→ 確定事項20参照
+- ✅CI設定（GitHub Actions）→ 確定事項22参照
 
 ### 完了済み（2026-08-04）
 

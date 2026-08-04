@@ -1,0 +1,60 @@
+name: backend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend.yml"
+
+defaults:
+  run:
+    working-directory: backend
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: social_link
+          POSTGRES_PASSWORD: social_link
+          POSTGRES_DB: social_link_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U social_link"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # Test-only values — never real secrets. §11.9/§13: prosody and
+      # speaker-id stay "none" here, same as local dev; those integrations
+      # are exercised by their own PoC work, not this suite.
+      DATABASE_URL: postgresql+asyncpg://social_link:social_link@localhost:5432/social_link_test
+      JWT_SECRET_KEY: ci-test-secret-not-for-real-use-only
+      ENVIRONMENT: dev
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Ruff
+        run: uv run ruff check app/ tests/
+
+      - name: Pytest
+        run: uv run pytest tests/ -v

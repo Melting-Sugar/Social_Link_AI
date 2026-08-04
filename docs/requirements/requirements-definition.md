@@ -304,6 +304,7 @@ social-link-app/
     - **SpeechBrain（ECAPA-TDNN）**：認証・アカウント登録が一切不要で、`uv sync --extra speaker-id`のみで即動作。埋め込み次元192、初回モデルロード後は1推論あたり約0.1秒。コサイン類似度は同一話者ペアで0.88、異なる話者ペアで0.20と明確に分離しており、実データでも判定に十分な精度差があることを確認した
     - **pyannote-audio（`pyannote/embedding`）**：Hugging Face Hub上で**ゲート付きモデル**であることが実行時に判明（`GatedRepoError: 401`）。利用するにはHugging Faceアカウントの作成・モデル利用規約への同意・アクセストークン（`HF_TOKEN`）の発行が必須で、開発者個人ではなくエンドユーザー環境ごとに追加のアカウント依存が生じる。アカウント作成はエージェントが代行できない操作のため、この時点で実データ比較は未実施（公開ベンチマーク値のみで比較）
     - **結論・採用**：公開ベンチマーク（SpeechBrain EER 0.69% vs pyannote-audio EER 2.8%）に加え、実動作確認でも精度・速度ともにSpeechBrainが良好だった。何より、12.3節でセルフホスト方式を選んだ本来の狙い（外部ベンダー・外部アカウントへの依存を無くすこと）に対し、pyannote-audioのゲート付きモデルは「Hugging Faceアカウントへの依存」という形で同種のリスクを再導入してしまう。この理由から**SpeechBrain（ECAPA-TDNN）を正式採用**とする。`SPEAKER_ID_PROVIDER`の既定値は引き続き`none`（軽量なPyTorch依存を必須にしないため）とし、有効化する場合は`SPEAKER_ID_PROVIDER=ecapa_local`と`uv sync --extra speaker-id`を明示的に指定する運用とする。pyannote-audio版アダプタ（`backend/app/integrations/speaker_id/pyannote_local.py`）は、将来`HF_TOKEN`を用意して第2の実データ比較をしたくなった場合に備え、切替可能な形で実装のみ残す
+24. ✅**Azure AI Speech（STT）の実キーを設定・実動作確認（2026-08-04）**：ユーザーがAzure Portalでリソースを作成しキー・エンドポイント（`japaneast`）を取得、`.env.keys`の`AZURE_SPEECH_KEY`に設定。合成した日本語音声（macOS `say`コマンド）を`AzureSpeechProvider.transcribe()`（`backend/app/integrations/stt/azure_speech.py`）に実際に通し、`ConversationTranscriber`が正しく起動・文字起こし・話者ラベル付与（`Guest-1`）・セッション終了までを問題なく完了することを確認した（入力音声「こんにちは、今日はいい天気ですね。会話のテストをしています。」に対し、句読点付与も含め高精度な書き起こしを取得）。同ファイルにあった「credentials未検証」という注記は解消。これで会話サポート（A-②以降）のSTT段階は実データでの動作確認が取れた。残るは話者分離結果を実際の複数話者会話に対して確認すること（プロソディ・話者識別との統合動作は次のステップ#1のプロソディPoC後に確認予定）
 
 ### 残る未決事項
 
@@ -510,13 +511,14 @@ STTの話者分離（diarization）は「話者1」「話者2」のように音�
 
 1. プロソディベンダーPoC（Empath / Imentiv AI / audEERING / AmiVoice ESASの比較。バッチ方式確定によりAmiVoiceも対象に）。実装は`PROSODY_PROVIDER`環境変数で切替可能な状態で完了済み（`backend/app/integrations/prosody/`）
 2. 利用規約・プライバシーポリシーの草案の内容確認・専門家レビュー・運営者情報等プレースホルダーの穴埋め（docs/legal/参照）
-3. `AZURE_SPEECH_KEY`・`RESEND_API_KEY`の取得・設定（`.env.keys`参照。`ANTHROPIC_API_KEY`は設定・実動作確認済み＝確定事項21）。Azure Speechキー設定後、実際に会話サポート・発言チェックの一連の流れを手元で動作確認する
+3. `RESEND_API_KEY`の取得・設定（`.env.keys`参照。優先度低め — 未設定でもメール送信のみ黙って失敗し他機能は動作する設計、確定事項20参照）
 
 ### 完了済み（次のステップから移動）
 
 - ✅話者識別モデルのPoC（SpeechBrain ECAPA-TDNN vs pyannote-audio）→ 確定事項23・12.3節参照
 - ✅ローカルDB環境の用意とAlembic初回マイグレーション生成（Homebrew版PostgreSQL 17で実施済み）→ 確定事項20参照
 - ✅CI設定（GitHub Actions）→ 確定事項22参照
+- ✅`AZURE_SPEECH_KEY`の取得・設定、STTパイプラインの実動作確認 → 確定事項24参照
 
 ### 完了済み（2026-08-04）
 

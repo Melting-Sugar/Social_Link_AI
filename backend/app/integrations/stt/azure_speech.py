@@ -15,10 +15,9 @@ class AzureSpeechProvider(STTProvider):
     WAV file rather than the REST batch-transcription API, specifically to
     avoid requiring a separate Blob Storage hop just to hand Azure a URL.
 
-    NOTE: written against the documented SDK surface but never exercised
-    against a live Azure endpoint in this environment (no credentials
-    available here) — validate for real during the vendor PoC pass
-    (requirements §13 next-steps #1), don't treat this as battle-tested.
+    Verified against a live Azure endpoint (2026-08-04, requirements
+    §10 confirmed item 24): transcription, punctuation, and speaker
+    labeling all work as documented against a ja-JP test clip.
     """
 
     def __init__(self) -> None:

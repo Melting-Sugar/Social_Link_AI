@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { conversationApi, SCENE_LABELS, type Scene } from "@/lib/conversation-api";
+import { useAuth } from "@/lib/auth-context";
 import { voiceProfileApi } from "@/lib/voice-profile-api";
 
 const SCENES: Scene[] = ["school_university", "workplace", "first_meeting", "friend", "romantic"];
@@ -18,11 +19,23 @@ const SCENE_COLORS: Record<Scene, string> = {
 export default function ScenePage() {
   const router = useRouter();
   const [isCreating, setIsCreating] = useState(false);
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
+
+  // proxy.ts can only check for a refresh-token cookie's presence, not
+  // validate it (§5) — a stale/expired cookie still lets the request
+  // through server-side. This client-side check is the fallback that
+  // actually catches that case instead of silently rendering nothing.
+  useEffect(() => {
+    if (!authLoading && !isAuthenticated) {
+      router.replace("/login?next=/scene");
+    }
+  }, [authLoading, isAuthenticated, router]);
 
   // §12.3: 会話サポート開始時に声紋未登録ならE-①へ自動リダイレクト。
   const { data: profileStatus, isLoading } = useQuery({
     queryKey: ["voice-profile-status"],
     queryFn: () => voiceProfileApi.status(),
+    enabled: isAuthenticated,
   });
 
   useEffect(() => {

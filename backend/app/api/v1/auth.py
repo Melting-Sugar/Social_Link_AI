@@ -69,6 +69,19 @@ async def login(payload: LoginRequest, session: DbSession, response: Response) -
     return TokenResponse(access_token=access_token)
 
 
+def _cleared_cookie_headers() -> dict[str, str]:
+    """A cookie-clearing Set-Cookie header, for attaching to an
+    HTTPException via its `headers=` param. Note: mutating the endpoint's
+    injected `Response` and then raising HTTPException does NOT work —
+    FastAPI's exception handler builds an entirely new response and
+    ignores it. Passing headers on the exception itself is the only
+    reliable way to set a header on an error response."""
+    settings = get_settings()
+    temp = Response()
+    temp.delete_cookie(key=settings.refresh_token_cookie_name, path="/", domain=settings.cookie_domain)
+    return {"set-cookie": temp.headers["set-cookie"]}
+
+
 @router.post("/refresh", response_model=TokenResponse)
 async def refresh(request: Request, session: DbSession) -> TokenResponse:
     settings = get_settings()
@@ -80,7 +93,20 @@ async def refresh(request: Request, session: DbSession) -> TokenResponse:
     try:
         access_token = await service.refresh_access_token(refresh_jwt)
     except AuthError as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+        # A stale/invalid cookie must be cleared here, not just rejected:
+        # proxy.ts (§11.4) only checks whether the cookie is *present* to
+        # decide whether a page is "logged in", not whether it's actually
+        # valid. Without this, an expired/revoked refresh token leaves the
+        # cookie sitting in the browser forever — every protected page
+        # bounces the user to /login (this call fails client-side), but
+        # /login itself immediately bounces back to / because proxy still
+        # sees a cookie, trapping the user in a loop with no way to reach
+        # the actual login form.
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(exc),
+            headers=_cleared_cookie_headers(),
+        ) from exc
     return TokenResponse(access_token=access_token)
 
 

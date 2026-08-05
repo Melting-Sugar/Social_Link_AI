@@ -25,7 +25,8 @@ class Recording(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     the whole pipeline. Deleted when its parent Conversation is deleted."""
 
     __tablename__ = "recordings"
-    __table_args__ = (CheckConstraint("duration_sec <= 1800", name="ck_recording_duration_max"),)
+    # 確定事項28: MVP向けに録音上限を30分(1800秒)から60秒へ短縮
+    __table_args__ = (CheckConstraint("duration_sec <= 60", name="ck_recording_duration_max"),)
 
     conversation_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),

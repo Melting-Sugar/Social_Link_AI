@@ -130,7 +130,7 @@ function RecordingPhase({
         相手にも録音・分析についてひと言伝えましょう
       </div>
       <p className="text-[26px] font-extrabold tracking-wide tabular-nums text-ink">{formatElapsed(elapsedSeconds)}</p>
-      <p className="text-[10.5px] text-ink-soft">上限30分</p>
+      <p className="text-[10.5px] text-ink-soft">上限{MAX_RECORDING_SECONDS}秒</p>
       <p className="max-w-[230px] text-[12px] leading-relaxed text-ink-soft">
         ボタンを押して録音を開始してください。もう一度押すと録音を終了し、解析を始めます。
       </p>

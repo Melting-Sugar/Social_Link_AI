@@ -7,6 +7,55 @@ from app.core.config import get_settings
 MODEL_SONNET_5 = "claude-sonnet-5"
 MODEL_HAIKU_4_5 = "claude-haiku-4-5-20251001"
 
+# Mirrors frontend/lib/conversation-api.ts's SCENE_LABELS — the LLM was
+# previously getting the raw enum value (e.g. "workplace"), not the Japanese
+# label a human would actually describe the scene as.
+_SCENE_LABELS_JA = {
+    "school_university": "学校・大学",
+    "workplace": "職場",
+    "first_meeting": "初対面",
+    "friend": "友人との会話",
+    "romantic": "恋愛・気になる人",
+}
+
+# §12.3確定事項26: AmiVoice ESASの正式パラメータ定義（日本語名・値域）を
+# 公式APIから取得したもの。分析結果の解釈だけでなく、この一覧をLLMに渡す
+# ためにも使う — 素のPython dictをそのまま渡すと、値域も日本語名も無い
+# 英語変数名だけの数値の羅列になり、LLMが数値の大小を正しく解釈できない。
+_PROSODY_PARAM_INFO: dict[str, tuple[str, float, float]] = {
+    "energy": ("エネルギー", 0, 100),
+    "stress": ("ストレス", 0, 100),
+    "emo_cog": ("感情バランス論理", 1, 500),
+    "concentration": ("集中", 0, 100),
+    "anticipation": ("期待", 0, 100),
+    "excitement": ("興奮", 0, 30),
+    "hesitation": ("躊躇", 0, 30),
+    "uncertainty": ("不確実", 0, 30),
+    "intensive_thinking": ("思考", 0, 100),
+    "imagination_activity": ("想像力", 0, 30),
+    "embarrassment": ("困惑", 0, 30),
+    "passionate": ("情熱", 0, 30),
+    "brain_power": ("脳活動", 0, 100),
+    "confidence": ("自信", 0, 30),
+    "aggression": ("攻撃性・憤り", 0, 30),
+    "atmosphere": ("雰囲気・会話傾向", -100, 100),
+    "upset": ("動揺", 0, 30),
+    "content": ("喜び", 0, 30),
+    "dissatisfaction": ("不満", 0, 30),
+    "extreme_emotion": ("極端な起伏", 0, 30),
+}
+
+
+def _format_prosody_scores(scores: dict[str, float]) -> str:
+    if not scores:
+        return "（利用不可）"
+    lines = []
+    for key, value in scores.items():
+        name, lo, hi = _PROSODY_PARAM_INFO.get(key, (key, None, None))
+        range_note = f"、値域{lo}〜{hi}" if lo is not None else ""
+        lines.append(f"- {name}（{key}{range_note}）: {value:.1f}")
+    return "\n" + "\n".join(lines)
+
 
 @dataclass
 class ConversationReport:
@@ -46,6 +95,17 @@ user=アプリ利用者本人、other=会話の相手、と話者識別済み）
 
 出力は必ずsubmit_conversation_reportツールで返してください。各フィールドの方針：
 
+- 場面（例：職場、初対面）ごとに、期待される言葉遣いや距離感の基準は異なります。
+  例えば初対面や職場での硬さは通常の範囲内である一方、友人や恋愛の場面で同程度の
+  硬さが続く場合は距離が縮まっていない兆候かもしれません。場面を踏まえた上で
+  flow・other_reaction・relationship_distanceを解釈してください。
+- プロソディ感情スコアが提供されている場合、各パラメータには値域が付記されています。
+  値域に対する相対的な高さ・低さで判断してください（例：値域0〜30のパラメータが
+  25なら高い、値域0〜100のパラメータが25なら中程度）。
+- 直前のラウンドの分析結果が提供されている場合、それは参考情報であり今回の判定を
+  上書きする根拠にはしないでください。relationship_distanceは前回の値に引きずられず、
+  あくまで今回の文字起こし・プロソディから判断した上で、前回との変化があれば
+  flowやother_reactionの記述の中で「前回よりも〜」のように触れてください。
 - flow（会話の流れ）、other_reaction（相手の反応）: あなたの解釈が入る項目です。
   「〜になっています」のような言い切りではなく、「〜ように見えます」等、推定である
   ことが伝わる言い回しにしてください。誤った断定は、実際にはそうでない状況を
@@ -187,12 +247,15 @@ class ClaudeClient:
         prosody_scores: dict[str, float],
         scene: str,
         mood_context: str | None = None,
+        previous_round_context: str | None = None,
     ) -> ConversationReport:
         user_content = (
-            f"場面: {scene}\n"
+            f"場面: {_SCENE_LABELS_JA.get(scene, scene)}\n"
             f"文字起こし:\n{transcript}\n\n"
-            f"プロソディ感情スコア: {prosody_scores if prosody_scores else '（利用不可）'}\n"
+            f"プロソディ感情スコア: {_format_prosody_scores(prosody_scores)}\n"
         )
+        if previous_round_context:
+            user_content += f"\n直前のラウンドの分析結果（参考情報。今回の判定はこのラウンドの内容を優先すること）: {previous_round_context}\n"
         if mood_context:
             user_content += f"\n参考情報（気分・体調の入力履歴）: {mood_context}\n"
 
@@ -210,7 +273,7 @@ class ClaudeClient:
     async def check_statement(
         self, *, statement_text: str, scene: str, relationship_context: str | None = None
     ) -> StatementCheckResult:
-        user_content = f"場面: {scene}\n発言案: {statement_text}\n"
+        user_content = f"場面: {_SCENE_LABELS_JA.get(scene, scene)}\n発言案: {statement_text}\n"
         if relationship_context:
             user_content += f"関係性の参考情報: {relationship_context}\n"
 

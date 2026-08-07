@@ -78,6 +78,14 @@ class Settings(BaseSettings):
     # base app runnable without the optional heavy PyTorch dependency group.
     speaker_id_provider: Literal["ecapa_local", "pyannote_local", "none"] = "none"
 
+    # §12 自分/相手の声紋照合の信頼度しきい値。best_similarityがこれ未満、
+    # または2位候補との差がmin_margin未満なら識別失敗として扱う。値は
+    # プレースホルダー — 合成音声でのPoC（0.88 vs 0.20）はあるが、実運用の
+    # 生録音での検証はまだ行っていない。ユーザー自身の実音声での試用結果を
+    # 踏まえて調整する想定（要件定義書参照）。
+    speaker_id_min_similarity: float = 0.5
+    speaker_id_min_margin: float = 0.15
+
     # §4.2 — HybridPipeline is the recommended/default path; RealtimeOnly is
     # documented but not yet implemented (see integrations/llm).
     pipeline_mode: Literal["hybrid", "realtime_only"] = "hybrid"

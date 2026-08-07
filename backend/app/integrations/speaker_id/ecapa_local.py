@@ -2,6 +2,17 @@ import asyncio
 
 from app.integrations.speaker_id.base import SpeakerIdProvider
 
+_MODEL_SOURCE = "speechbrain/spkrec-ecapa-voxceleb"
+
+# Module-level, not instance-level: get_speaker_id_provider() (§6) builds a
+# fresh EcapaLocalSpeakerIdProvider() on every call, i.e. every single
+# Celery task — an instance attribute would re-pay the model-load cost on
+# every recording. Caching at module scope means only the first task to
+# run in a given worker process pays it (measured ~2-8s); every task after
+# that in the same prefork process reuses it. Safe without a lock: Celery
+# prefork workers run one task at a time per process.
+_cached_classifier = None
+
 
 class EcapaLocalSpeakerIdProvider(SpeakerIdProvider):
     """§12.3 — provisional pick between the two PoC candidates: SpeechBrain's
@@ -17,13 +28,9 @@ class EcapaLocalSpeakerIdProvider(SpeakerIdProvider):
     (§5). Model loading is lazy for the same reason.
     """
 
-    _MODEL_SOURCE = "speechbrain/spkrec-ecapa-voxceleb"
-
-    def __init__(self) -> None:
-        self._classifier = None
-
     def _get_classifier(self):
-        if self._classifier is None:
+        global _cached_classifier
+        if _cached_classifier is None:
             try:
                 from speechbrain.inference.speaker import EncoderClassifier
             except ImportError as exc:
@@ -31,8 +38,8 @@ class EcapaLocalSpeakerIdProvider(SpeakerIdProvider):
                     "Speaker identification requires the optional 'speaker-id' "
                     "dependency group — run `uv sync --extra speaker-id`."
                 ) from exc
-            self._classifier = EncoderClassifier.from_hparams(source=self._MODEL_SOURCE)
-        return self._classifier
+            _cached_classifier = EncoderClassifier.from_hparams(source=_MODEL_SOURCE)
+        return _cached_classifier
 
     async def extract_embedding(self, audio_path: str) -> list[float]:
         # Model inference is CPU/GPU-bound and blocking — keep it off the

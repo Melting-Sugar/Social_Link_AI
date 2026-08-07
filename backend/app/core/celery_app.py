@@ -21,6 +21,15 @@ celery_app.conf.update(
     result_serializer="json",
     timezone="Asia/Tokyo",
     enable_utc=True,
+    # A second, independent safety net beyond amivoice.py's own 600s
+    # polling ceiling — if that ever fails to fire (bug, or some other
+    # unanticipated hang), a stuck task would otherwise occupy one of the
+    # worker pool's slots forever with nothing to reclaim it. soft fires
+    # first (raises SoftTimeLimitExceeded, letting the task's `finally`
+    # block still run — §11.5's temp-audio cleanup); hard guarantees the
+    # process actually dies if soft is somehow swallowed.
+    task_soft_time_limit=840,
+    task_time_limit=900,
 )
 
 # §5 確定事項16 / §11.5: unsaved Conversations and any orphaned temp audio

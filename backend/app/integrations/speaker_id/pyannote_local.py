@@ -3,6 +3,10 @@ import asyncio
 from app.core.config import get_settings
 from app.integrations.speaker_id.base import SpeakerIdProvider
 
+# Module-level cache — see ecapa_local.py for why (get_speaker_id_provider()
+# builds a fresh instance per Celery task; this avoids reloading per task).
+_cached_inference = None
+
 
 class PyannoteLocalSpeakerIdProvider(SpeakerIdProvider):
     """§12.3 — the second PoC candidate (requirements §13 next-steps #2),
@@ -21,11 +25,9 @@ class PyannoteLocalSpeakerIdProvider(SpeakerIdProvider):
 
     _MODEL_SOURCE = "pyannote/embedding"
 
-    def __init__(self) -> None:
-        self._inference = None
-
     def _get_inference(self):
-        if self._inference is None:
+        global _cached_inference
+        if _cached_inference is None:
             try:
                 from pyannote.audio import Inference, Model
             except ImportError as exc:
@@ -35,8 +37,8 @@ class PyannoteLocalSpeakerIdProvider(SpeakerIdProvider):
                 ) from exc
             token = get_settings().hf_token or None
             model = Model.from_pretrained(self._MODEL_SOURCE, use_auth_token=token)
-            self._inference = Inference(model, window="whole")
-        return self._inference
+            _cached_inference = Inference(model, window="whole")
+        return _cached_inference
 
     async def extract_embedding(self, audio_path: str) -> list[float]:
         return await asyncio.to_thread(self._extract_embedding_sync, audio_path)

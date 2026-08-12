@@ -48,7 +48,7 @@ export default function ConversationSummaryPage() {
         type="button"
         disabled={!bullets}
         onClick={() => router.push(`/conversation/${id}/log`)}
-        className="mt-6 rounded-2xl bg-coral px-4 py-[15px] text-[14.5px] font-bold text-on-accent disabled:opacity-50"
+        className="mt-6 rounded-2xl bg-coral px-4 py-[15px] text-[14.5px] font-bold text-on-accent transition-colors active:bg-coral-strong disabled:opacity-50"
       >
         記録する →
       </button>

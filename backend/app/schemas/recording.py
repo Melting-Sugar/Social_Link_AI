@@ -3,7 +3,7 @@ import uuid
 from pydantic import BaseModel
 
 from app.models.enums import RelationshipDistance, SuggestionCategory
-from app.models.recording import RecordingStatus
+from app.models.recording import AnalysisStage, RecordingStatus
 
 
 class RecordingResponse(BaseModel):
@@ -14,6 +14,7 @@ class RecordingResponse(BaseModel):
     id: uuid.UUID
     round_number: int
     status: RecordingStatus
+    current_stage: AnalysisStage | None
     error_message: str | None
 
     topic: str | None

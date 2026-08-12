@@ -4,7 +4,7 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.recording import Recording, RecordingStatus
+from app.models.recording import AnalysisStage, Recording, RecordingStatus
 
 
 class RecordingRepository:
@@ -60,6 +60,10 @@ class RecordingRepository:
     ) -> None:
         recording.status = status
         recording.error_message = error_message
+        await self._session.flush()
+
+    async def set_stage(self, recording: Recording, stage: AnalysisStage) -> None:
+        recording.current_stage = stage
         await self._session.flush()
 
     async def set_topic(self, recording: Recording, topic: str) -> None:

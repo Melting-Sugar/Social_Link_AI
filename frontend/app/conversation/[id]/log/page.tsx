@@ -55,7 +55,7 @@ export default function ConversationLogPage() {
                 key={c}
                 type="button"
                 onClick={() => setCondition(c)}
-                className={`rounded-xl border px-2 py-2.5 text-[11px] font-bold ${
+                className={`rounded-xl border px-2 py-2.5 text-[11px] font-bold transition-colors active:bg-coral-tint ${
                   condition === c ? "border-coral bg-coral-tint text-ink" : "border-line bg-surface text-ink-soft"
                 }`}
               >
@@ -112,7 +112,7 @@ export default function ConversationLogPage() {
           type="button"
           onClick={handleSubmit}
           disabled={isSubmitting}
-          className="rounded-2xl bg-coral px-4 py-[15px] text-[14.5px] font-bold text-on-accent disabled:opacity-50"
+          className="rounded-2xl bg-coral px-4 py-[15px] text-[14.5px] font-bold text-on-accent transition-colors active:bg-coral-strong disabled:opacity-50"
         >
           {isSubmitting ? "記録中..." : "記録する"}
         </button>

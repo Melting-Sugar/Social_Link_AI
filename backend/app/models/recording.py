@@ -18,6 +18,17 @@ class RecordingStatus(StrEnum):
     FAILED = "failed"
 
 
+class AnalysisStage(StrEnum):
+    """UI満足度向上のための解析中進捗表示（2026-08-12ユーザー指示）。
+    status=PROCESSINGの間、AnalysisService.run()が実際に通過する3段階と
+    1:1で対応させる（frontendは(N/3)表示に変換、conversation/[id]/page.tsx
+    参照）。"""
+
+    ANALYZING_CONVERSATION = "analyzing_conversation"  # AmiVoice STT/話者分離/感情分析
+    SEPARATING_SPEAKERS = "separating_speakers"  # 声紋照合による自分/相手の判別
+    GENERATING_REPORT = "generating_report"  # Sonnet 5レポート生成
+
+
 class Recording(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     """§11.9. The `*_ready` flags implement the progressive-reveal polling
     design from §11.5/§11.6 — the frontend polls GET .../recordings/{rid}
@@ -39,6 +50,9 @@ class Recording(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
 
     status: Mapped[RecordingStatus] = mapped_column(
         Enum(RecordingStatus, native_enum=False), nullable=False, default=RecordingStatus.PENDING
+    )
+    current_stage: Mapped[AnalysisStage | None] = mapped_column(
+        Enum(AnalysisStage, native_enum=False), nullable=True
     )
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 

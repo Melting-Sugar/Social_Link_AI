@@ -19,6 +19,7 @@
   --gold-tint: #faf1db;
   --good: #b7dcc0;
   --caution: #eeb6a7;
+  --caution-strong: #e2967f;
   --caution-tint: #faece7;
   --on-accent: #221f1b;
   --scene-1: #f3caae;
@@ -51,6 +52,7 @@
   --gold-tint: #3a2a15;
   --good: #7fae8d;
   --caution: #cf8f7f;
+  --caution-strong: #dba392;
   --caution-tint: #3a2620;
   --on-accent: #221f1b;
   --scene-1: #d39674;
@@ -76,6 +78,7 @@
   --color-gold-tint: var(--gold-tint);
   --color-good: var(--good);
   --color-caution: var(--caution);
+  --color-caution-strong: var(--caution-strong);
   --color-caution-tint: var(--caution-tint);
   --color-on-accent: var(--on-accent);
   --color-scene-1: var(--scene-1);

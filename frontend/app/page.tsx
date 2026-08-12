@@ -20,7 +20,7 @@ export default function TitlePage() {
       </div>
       <Link
         href="/scene"
-        className="w-full max-w-[280px] rounded-2xl bg-coral px-4 py-[15px] text-center text-[14.5px] font-bold tracking-wide text-on-accent transition-colors hover:bg-coral-strong"
+        className="w-full max-w-[280px] rounded-2xl bg-coral px-4 py-[15px] text-center text-[14.5px] font-bold tracking-wide text-on-accent transition-colors hover:bg-coral-strong active:bg-coral-strong"
       >
         サポートを開始する
       </Link>

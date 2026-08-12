@@ -15,7 +15,7 @@ from app.integrations.speaker_id.factory import get_speaker_id_provider
 from app.integrations.stt.amivoice import extract_prosody_scores
 from app.integrations.stt.factory import get_stt_provider
 from app.models.conversation import Conversation
-from app.models.recording import Recording, RecordingStatus
+from app.models.recording import AnalysisStage, Recording, RecordingStatus
 from app.repositories.conversation_repository import ConversationRepository
 from app.repositories.recording_repository import RecordingRepository
 from app.repositories.voice_profile_repository import VoiceProfileRepository
@@ -83,6 +83,8 @@ class AnalysisService:
                 raise RuntimeError("会話が見つかりません。")
 
             # 1. STT — diarized transcript (§3.3: split happens once, here)
+            await self._recordings.set_stage(recording, AnalysisStage.ANALYZING_CONVERSATION)
+            await self._session.commit()
             stt_result = await self._stt.transcribe(wav_path)
             if not stt_result.segments:
                 raise RuntimeError("音声が検出できませんでした。マイクの位置を確認し、もう一度お試しください。")
@@ -94,6 +96,8 @@ class AnalysisService:
 
             # 3. §12: resolve which diarized speaker is "self" via voice-
             # profile cosine similarity, then relabel the transcript.
+            await self._recordings.set_stage(recording, AnalysisStage.SEPARATING_SPEAKERS)
+            await self._session.commit()
             speaker_clips = await slice_audio_by_speaker(wav_path, stt_result.segments)
             resolution = await self._resolve_speakers(conversation.user_id, speaker_clips)
 
@@ -159,6 +163,8 @@ class AnalysisService:
             # the prompt explicitly tells it not to let this override
             # what THIS round's actual content shows (claude.py).
             previous_round_context = await self._build_previous_round_context(recording)
+            await self._recordings.set_stage(recording, AnalysisStage.GENERATING_REPORT)
+            await self._session.commit()
             report = await self._llm.generate_conversation_report(
                 transcript=relabeled_transcript,
                 prosody_scores=prosody_scores,

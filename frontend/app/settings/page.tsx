@@ -87,7 +87,7 @@ export default function SettingsPage() {
           type="button"
           onClick={handleLogout}
           disabled={isBusy}
-          className="mt-2 rounded-2xl border border-line bg-surface px-3.5 py-3.5 text-left text-[13px] font-bold text-ink"
+          className="mt-2 rounded-2xl border border-line bg-surface px-3.5 py-3.5 text-left text-[13px] font-bold text-ink transition-colors active:bg-surface-sunken"
         >
           ログアウト
         </button>
@@ -111,11 +111,15 @@ export default function SettingsPage() {
               <button
                 type="button"
                 onClick={() => setConfirmingDelete(false)}
-                className="flex-1 rounded-2xl border border-line bg-surface px-3.5 py-2.5 text-[12.5px] font-bold text-ink"
+                className="flex-1 rounded-2xl border border-line bg-surface px-3.5 py-2.5 text-[12.5px] font-bold text-ink transition-colors active:bg-surface-sunken"
               >
                 キャンセル
               </button>
-              <PrimaryButton onClick={handleDeleteAccount} disabled={isBusy} className="flex-1 !bg-caution">
+              <PrimaryButton
+                onClick={handleDeleteAccount}
+                disabled={isBusy}
+                className="flex-1 !bg-caution active:!bg-caution-strong"
+              >
                 削除する
               </PrimaryButton>
             </div>

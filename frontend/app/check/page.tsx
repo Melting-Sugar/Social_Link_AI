@@ -73,7 +73,7 @@ export default function StatementCheckPage() {
           type="button"
           onClick={handleCheck}
           disabled={isChecking || !statementText.trim()}
-          className="rounded-2xl bg-coral px-4 py-[15px] text-[14.5px] font-bold text-on-accent disabled:opacity-50"
+          className="rounded-2xl bg-coral px-4 py-[15px] text-[14.5px] font-bold text-on-accent transition-colors active:bg-coral-strong disabled:opacity-50"
         >
           {isChecking ? "確認中..." : "確認する"}
         </button>

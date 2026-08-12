@@ -37,10 +37,21 @@ export interface ConversationResponse {
   ended_at: string | null;
 }
 
+export type AnalysisStage = "analyzing_conversation" | "separating_speakers" | "generating_report";
+
+// 解析中画面の進捗表示（2026-08-12ユーザー指示）。バックエンドの
+// AnalysisService.run()が実際に通過する3段階と1:1で対応。
+export const ANALYSIS_STAGE_LABELS: Record<AnalysisStage, string> = {
+  analyzing_conversation: "会話内容を分析しています...(1/3)",
+  separating_speakers: "話者を分離しています...(2/3)",
+  generating_report: "レポートを生成しています...(3/3)",
+};
+
 export interface RecordingResponse {
   id: string;
   round_number: number;
   status: "pending" | "processing" | "completed" | "failed";
+  current_stage: AnalysisStage | null;
   error_message: string | null;
   topic: string | null;
   topic_ready: boolean;

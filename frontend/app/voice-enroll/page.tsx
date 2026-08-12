@@ -52,7 +52,7 @@ function VoiceEnrollForm() {
                 type="button"
                 onClick={isRecording ? stop : start}
                 aria-label={isRecording ? "録音を終了する" : "録音を開始する"}
-                className="flex h-20 w-20 items-center justify-center rounded-full bg-caution transition-transform active:scale-95"
+                className="flex h-20 w-20 items-center justify-center rounded-full bg-caution transition-all active:scale-95 active:bg-caution-strong"
               >
                 <span className={isRecording ? "h-5 w-5 rounded-sm bg-on-accent" : "h-6 w-6 rounded-full bg-on-accent"} />
               </button>

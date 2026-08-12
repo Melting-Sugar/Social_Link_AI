@@ -67,7 +67,7 @@ export default function ScenePage() {
             type="button"
             disabled={isCreating}
             onClick={() => handleSelect(scene)}
-            className={`rounded-2xl px-3.5 py-3.5 text-left text-[13.5px] font-bold text-on-accent disabled:opacity-60 ${SCENE_COLORS[scene]}`}
+            className={`rounded-2xl px-3.5 py-3.5 text-left text-[13.5px] font-bold text-on-accent transition-[filter] active:brightness-90 disabled:opacity-60 ${SCENE_COLORS[scene]}`}
           >
             {SCENE_LABELS[scene]}
           </button>

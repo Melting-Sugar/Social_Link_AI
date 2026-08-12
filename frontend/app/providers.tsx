@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
 import { FooterNav } from "@/components/FooterNav";
 import { AuthProvider } from "@/lib/auth-context";
+import { NavigationGuardProvider } from "@/lib/navigation-guard-context";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   // One QueryClient per browser session (not per render) — created lazily
@@ -28,10 +29,12 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <div className="flex min-h-full flex-1 flex-col">
-          <div className="flex flex-1 flex-col">{children}</div>
-          <FooterNav />
-        </div>
+        <NavigationGuardProvider>
+          <div className="flex min-h-full flex-1 flex-col">
+            <div className="flex flex-1 flex-col">{children}</div>
+            <FooterNav />
+          </div>
+        </NavigationGuardProvider>
       </AuthProvider>
     </QueryClientProvider>
   );

@@ -6,11 +6,13 @@ import { useEffect, useRef, useState } from "react";
 import { SceneBar } from "@/components/SceneBar";
 import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import {
+  ANALYSIS_STAGE_LABELS,
   RELATIONSHIP_DISTANCE_LABELS,
   SUGGESTION_CATEGORY_LABELS,
   conversationApi,
   type RecordingResponse,
 } from "@/lib/conversation-api";
+import { useNavigationGuard } from "@/lib/navigation-guard-context";
 
 const MAX_RECORDING_SECONDS = 60; // §11.3, 確定事項28 — capped for MVP to keep AmiVoice analysis latency tolerable
 
@@ -67,6 +69,15 @@ export default function ConversationPage() {
       return status === "completed" || status === "failed" ? false : 2000;
     },
   });
+
+  // 録音中（録音画面かつ録音が作動している）・解析中はフッターナビでの
+  // 離脱を確認ダイアログでガードする（2026-08-12ユーザー指示）。
+  const { setGuarded } = useNavigationGuard();
+  const isAnalyzing = phase === "analyzing" && recording?.status !== "completed" && recording?.status !== "failed";
+  useEffect(() => {
+    setGuarded((phase === "recording" && isRecording) || isAnalyzing);
+    return () => setGuarded(false);
+  }, [phase, isRecording, isAnalyzing, setGuarded]);
 
   const handleRecordAgain = () => {
     setActiveRecordingId(null);
@@ -138,7 +149,7 @@ function RecordingPhase({
         type="button"
         aria-label={isRecording ? "録音を終了して分析する" : "録音を開始する"}
         onClick={isRecording ? onStop : onStart}
-        className="flex h-[92px] w-[92px] items-center justify-center rounded-full bg-caution"
+        className="flex h-[92px] w-[92px] items-center justify-center rounded-full bg-caution transition-colors active:bg-caution-strong"
       >
         {isRecording ? (
           <span className="h-6 w-6 rounded-sm bg-on-accent" />
@@ -158,7 +169,11 @@ function FailedPhase({ message, onRetry }: { message: string | null; onRetry: ()
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
       <p className="text-[13px] text-ink">{message ?? "解析中に問題が発生しました。もう一度お試しください。"}</p>
-      <button type="button" onClick={onRetry} className="rounded-2xl bg-coral px-5 py-3 text-[13.5px] font-bold text-on-accent">
+      <button
+        type="button"
+        onClick={onRetry}
+        className="rounded-2xl bg-coral px-5 py-3 text-[13.5px] font-bold text-on-accent transition-colors active:bg-coral-strong"
+      >
         もう一度録音する
       </button>
     </div>
@@ -170,7 +185,9 @@ function AnalyzingPhase({ recording }: { recording: RecordingResponse }) {
     <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
       <div className="h-8 w-8 animate-spin rounded-full border-[3px] border-line border-t-coral" />
       <p className="text-[14.5px] font-bold text-ink">解析中...</p>
-      <p className="text-[11.5px] text-ink-soft">通常30秒ほどで完了します</p>
+      <p className="text-[11.5px] text-ink-soft">
+        {recording.current_stage ? ANALYSIS_STAGE_LABELS[recording.current_stage] : "準備しています..."}
+      </p>
       {recording.topic_ready && (
         <div className="mt-3 w-full max-w-xs rounded-xl bg-coral-tint px-3.5 py-2.5 text-left text-[11.5px] font-bold text-ink">
           話題：{recording.topic}
@@ -219,11 +236,15 @@ function ResultPhase({
         <button
           type="button"
           onClick={onRecordAgain}
-          className="flex-1 rounded-2xl border border-line bg-surface-sunken px-4 py-3 text-[13px] font-bold text-ink"
+          className="flex-1 rounded-2xl border border-line bg-surface-sunken px-4 py-3 text-[13px] font-bold text-ink transition-colors active:bg-line"
         >
           もう一度録音する
         </button>
-        <button type="button" onClick={onFinish} className="flex-1 rounded-2xl bg-coral px-4 py-3 text-[13px] font-bold text-on-accent">
+        <button
+          type="button"
+          onClick={onFinish}
+          className="flex-1 rounded-2xl bg-coral px-4 py-3 text-[13px] font-bold text-on-accent transition-colors active:bg-coral-strong"
+        >
           会話を終了する →
         </button>
       </div>

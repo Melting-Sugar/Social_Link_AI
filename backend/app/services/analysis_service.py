@@ -42,14 +42,19 @@ _STAGE_ERROR_LABELS: dict[AnalysisStage | None, str] = {
 
 @dataclass
 class SpeakerResolution:
-    """§12 self/other voiceprint resolution outcome. `self_label`/
-    `other_label` are None together only when identification genuinely
-    failed (no profile, threshold not met, extraction unsupported) — see
-    `self_only`/`other_only` for the "only one speaker was ever detected"
-    case, which is NOT a failure, just a limited result."""
+    """§12 self/other voiceprint resolution outcome. Each side is the set
+    of raw diarized labels resolved to that role — usually one label, but
+    two when AmiVoice's diarization split a single physical speaker into
+    two labels and _resolve_speakers() merged them back together (see
+    its "both individually clear speaker_id_min_similarity" branch).
+    `self_label`/`other_label` are None together only when identification
+    genuinely failed (no profile, threshold not met, extraction
+    unsupported) — see `self_only`/`other_only` for the "only one
+    physical speaker was ever captured" case, which is NOT a failure,
+    just a limited result."""
 
-    self_label: str | None
-    other_label: str | None
+    self_label: frozenset[str] | None
+    other_label: frozenset[str] | None
     self_only: bool = False
     other_only: bool = False
 
@@ -205,14 +210,19 @@ class AnalysisService:
             await self._recordings.set_single_speaker_detected(recording, True)
             await self._session.commit()
 
-        self_label = resolution.self_label
-        other_label = resolution.other_label
+        # Usually one raw diarized label each; two when a same-speaker
+        # collapse (_SAME_SPEAKER_COLLAPSE_THRESHOLD) merged a spurious
+        # split back into one physical speaker. self_labels empty means
+        # nothing resolved as self (other_only case) — never treated as
+        # "everything is self" by the `in` checks below.
+        self_labels = resolution.self_label or frozenset()
+        other_labels = resolution.other_label
 
         # 「あなた」「相手」は英語の[user]/[other]タグのままLLMに渡すと、
         # 生成文中に"userが〜""otherも〜"と英語のまま出力されてしまう
         # ため（実際に確認済み）、最初から日本語ラベルで渡す。
         relabeled_transcript = "\n".join(
-            f"[{'あなた' if seg.speaker_label == self_label else '相手'}] {seg.text}"
+            f"[{'あなた' if seg.speaker_label in self_labels else '相手'}] {seg.text}"
             for seg in stt_result.segments
         )
 
@@ -224,22 +234,24 @@ class AnalysisService:
         # call (slice_audio_by_speaker's per-speaker clip is only
         # needed as a fallback path here — §12's self/other resolution
         # above still needs it regardless of STT vendor).
-        # other_label is None specifically in the self_only case (§12,
+        # other_labels is None specifically in the self_only case (§12,
         # missing_speaker_note above) — no other-speaker clip exists to
         # get prosody from at all, so skip it entirely rather than
-        # erroring. other_only DOES still have other_label set, so
+        # erroring. other_only DOES still have other_labels set, so
         # prosody on the other speaker's tone remains available even
         # without the user's own audio.
         prosody_scores: dict[str, float] = {}
-        if other_label is not None:
+        if other_labels:
             if stt_result.raw_vendor_response is not None:
                 other_segments = [
-                    seg for seg in stt_result.segments if seg.speaker_label == other_label
+                    seg for seg in stt_result.segments if seg.speaker_label in other_labels
                 ]
                 prosody_scores = extract_prosody_scores(stt_result.raw_vendor_response, other_segments)
             if not prosody_scores:
                 try:
-                    prosody_result = await self._prosody.analyze(speaker_clips[other_label])
+                    # A collapsed pair still only has one underlying real
+                    # voice, so any one member clip represents it.
+                    prosody_result = await self._prosody.analyze(speaker_clips[next(iter(other_labels))])
                     prosody_scores = prosody_result.scores
                 except NotImplementedError:
                     # §3.6 no separate prosody vendor active — proceed
@@ -293,8 +305,8 @@ class AnalysisService:
             # （run()側でself_only/other_onlyとして専用メッセージを出す）。
             [(label, similarity)] = similarities.items()
             if similarity >= self._settings.speaker_id_min_similarity:
-                return SpeakerResolution(self_label=label, other_label=None, self_only=True)
-            return SpeakerResolution(self_label=None, other_label=label, other_only=True)
+                return SpeakerResolution(self_label=frozenset({label}), other_label=None, self_only=True)
+            return SpeakerResolution(self_label=None, other_label=frozenset({label}), other_only=True)
 
         # 2人以上分離できた場合（diarizationMaxSpeaker=2のAmiVoiceでは常に
         # 2人、Azureフォールバックでは3人以上の可能性もあるがrun()側は
@@ -303,15 +315,34 @@ class AnalysisService:
         # 十分でなければ「自信を持って判別できない」として識別失敗扱いにする。
         ranked = sorted(similarities.items(), key=lambda item: item[1], reverse=True)
         best_label, best_similarity = ranked[0]
-        _, second_similarity = ranked[1]
+        second_label, second_similarity = ranked[1]
         if (
             best_similarity < self._settings.speaker_id_min_similarity
             or (best_similarity - second_similarity) < self._settings.speaker_id_min_margin
         ):
+            # AmiVoiceの話者分離は、実際は1人しか話していない録音でも、
+            # まれに2ラベルに誤って分割することがある（実データで確認
+            # 済み — 登録済みユーザーで繰り返し「話者の識別に失敗」が
+            # 発生し、調べたところ上位2ラベルとも単独で見れば登録声紋に
+            # 十分似ている＝2位との僅差だけがmarginチェックに引っかかって
+            # いたケースだった）。margin不足の原因が「best自体が弱い」の
+            # ではなく「上位2つとも登録声紋に対し個別に十分な類似度がある」
+            # ことであれば、別人との取り違えではなく本人の誤分割である
+            # 可能性が高いと判断し、単一話者ケースと同じ救済に倒す。
+            # （ラベル同士を直接比較する方式も検討したが、合成音声での
+            # 実測でクリーンな別人同士でも0.8超の類似度が出ることがあり、
+            # 誤って別人を統合しかねず不採用とした — 登録声紋との個別の
+            # 一致度のみを根拠にする、より保守的なこの方式を採用）。
+            if (
+                best_similarity >= self._settings.speaker_id_min_similarity
+                and second_similarity >= self._settings.speaker_id_min_similarity
+            ):
+                merged = frozenset({best_label, second_label})
+                return SpeakerResolution(self_label=merged, other_label=None, self_only=True)
             return SpeakerResolution(self_label=None, other_label=None)
 
-        other_label = next(label for label in speaker_clips if label != best_label)
-        return SpeakerResolution(self_label=best_label, other_label=other_label)
+        other_label = frozenset(label for label in speaker_clips if label != best_label)
+        return SpeakerResolution(self_label=frozenset({best_label}), other_label=other_label)
 
     async def _build_previous_round_context(self, recording: Recording) -> str | None:
         if recording.round_number <= 1:

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import uuid
 from dataclasses import dataclass
@@ -24,6 +25,19 @@ logger = logging.getLogger(__name__)
 
 _NETWORK_ERROR_MESSAGE = "通信エラーが発生しました。電波の良い場所でもう一度お試しください。"
 _VENDOR_ERROR_MESSAGE = "解析中に問題が発生しました。もう一度お試しください。"
+
+# 2026-08-12ユーザー指示: 個々の処理（AmiVoice呼び出し等）ごとに別々の
+# タイムアウトを設けるのではなく、解析全体で1本の締め切りにする。
+# amivoice.py自身の600秒ポーリング上限やhttpxの60秒/リクエスト上限は
+# それぞれの内部実装の保険としてそのまま残すが、実際に効くのは常に
+# こちらの300秒の方が先（バックストップの関係、amivoice.py参照）。
+_PIPELINE_TIMEOUT_SECONDS = 300.0
+
+_STAGE_ERROR_LABELS: dict[AnalysisStage | None, str] = {
+    AnalysisStage.ANALYZING_CONVERSATION: "会話内容の分析",
+    AnalysisStage.SEPARATING_SPEAKERS: "話者の分離",
+    AnalysisStage.GENERATING_REPORT: "レポートの生成",
+}
 
 
 @dataclass
@@ -75,122 +89,21 @@ class AnalysisService:
             await self._recordings.set_status(recording, RecordingStatus.PROCESSING)
             await self._session.commit()
 
-            if wav_path is None:
-                raise RuntimeError("録音ファイルが見つかりません。")
-
-            conversation = await self._session.get(Conversation, recording.conversation_id)
-            if conversation is None:
-                raise RuntimeError("会話が見つかりません。")
-
-            # 1. STT — diarized transcript (§3.3: split happens once, here)
-            await self._recordings.set_stage(recording, AnalysisStage.ANALYZING_CONVERSATION)
-            await self._session.commit()
-            stt_result = await self._stt.transcribe(wav_path)
-            if not stt_result.segments:
-                raise RuntimeError("音声が検出できませんでした。マイクの位置を確認し、もう一度お試しください。")
-
-            # 2. Fast topic extraction — §11.6 progressive reveal
-            topic = await self._llm.extract_topic(transcript=stt_result.full_transcript)
-            await self._recordings.set_topic(recording, topic)
-            await self._session.commit()
-
-            # 3. §12: resolve which diarized speaker is "self" via voice-
-            # profile cosine similarity, then relabel the transcript.
-            await self._recordings.set_stage(recording, AnalysisStage.SEPARATING_SPEAKERS)
-            await self._session.commit()
-            speaker_clips = await slice_audio_by_speaker(wav_path, stt_result.segments)
-            resolution = await self._resolve_speakers(conversation.user_id, speaker_clips)
-
-            if resolution.self_label is None and resolution.other_label is None:
+            try:
+                await asyncio.wait_for(
+                    self._run_pipeline(recording, wav_path, speaker_clips),
+                    timeout=_PIPELINE_TIMEOUT_SECONDS,
+                )
+            except TimeoutError:
+                # current_stage was last committed by whichever step was in
+                # progress when the deadline hit (set_stage()+commit() below
+                # happen right as each step starts) — that's what actually
+                # went wrong, not a generic failure.
+                stage_label = _STAGE_ERROR_LABELS.get(recording.current_stage, "解析")
                 raise RuntimeError(
-                    "話者の識別に失敗しました。設定画面から声紋の登録状況をご確認のうえ、"
-                    "もう一度お試しください。"
-                )
-
-            # 話者が1人しか分離できなかった場合でも、声紋照合で「誰だったか」
-            # は分かるので、エラーで止めずレポート生成まで進める
-            # （2026-08-12ユーザー指示、①の修正から発展）。検出できなかった
-            # 側については無理に推測させず、その旨をLLMに伝えて正直に
-            # 書かせる（missing_speaker_note、claude.py参照）。UIにも
-            # single_speaker_detectedとして開示する。
-            missing_speaker_note: str | None = None
-            if resolution.self_only:
-                missing_speaker_note = (
-                    "相手の発言を検出できませんでした。文字起こしはあなたの発言のみです。"
-                )
-            elif resolution.other_only:
-                missing_speaker_note = (
-                    "あなたの発言を検出できませんでした。文字起こしは相手の発言のみです。"
-                )
-            if missing_speaker_note is not None:
-                await self._recordings.set_single_speaker_detected(recording, True)
-                await self._session.commit()
-
-            self_label = resolution.self_label
-            other_label = resolution.other_label
-
-            # 「あなた」「相手」は英語の[user]/[other]タグのままLLMに渡すと、
-            # 生成文中に"userが〜""otherも〜"と英語のまま出力されてしまう
-            # ため（実際に確認済み）、最初から日本語ラベルで渡す。
-            relabeled_transcript = "\n".join(
-                f"[{'あなた' if seg.speaker_label == self_label else '相手'}] {seg.text}"
-                for seg in stt_result.segments
-            )
-
-            # 4. Prosody — on the OTHER speaker's clip specifically: the
-            # value proposition (§2, §3.1) is reading the conversation
-            # partner's reaction, not the user's own tone. §12.3 確定事項25:
-            # AmiVoice bundles ESAS sentiment into the same STT call, so
-            # when available it's used directly instead of a second vendor
-            # call (slice_audio_by_speaker's per-speaker clip is only
-            # needed as a fallback path here — §12's self/other resolution
-            # above still needs it regardless of STT vendor).
-            # other_label is None specifically in the self_only case (§12,
-            # missing_speaker_note above) — no other-speaker clip exists to
-            # get prosody from at all, so skip it entirely rather than
-            # erroring. other_only DOES still have other_label set, so
-            # prosody on the other speaker's tone remains available even
-            # without the user's own audio.
-            prosody_scores: dict[str, float] = {}
-            if other_label is not None:
-                if stt_result.raw_vendor_response is not None:
-                    other_segments = [
-                        seg for seg in stt_result.segments if seg.speaker_label == other_label
-                    ]
-                    prosody_scores = extract_prosody_scores(stt_result.raw_vendor_response, other_segments)
-                if not prosody_scores:
-                    try:
-                        prosody_result = await self._prosody.analyze(speaker_clips[other_label])
-                        prosody_scores = prosody_result.scores
-                    except NotImplementedError:
-                        # §3.6 no separate prosody vendor active — proceed
-                        # without prosody input, not as a failure
-                        # (Realtime-only-style degradation).
-                        prosody_scores = {}
-
-            # 5. Full interpretive report (Sonnet 5, §11.11-compliant prompt).
-            # Prior-round context (if this isn't round 1) gives the model
-            # continuity across a multi-round conversation session, though
-            # the prompt explicitly tells it not to let this override
-            # what THIS round's actual content shows (claude.py).
-            previous_round_context = await self._build_previous_round_context(recording)
-            await self._recordings.set_stage(recording, AnalysisStage.GENERATING_REPORT)
-            await self._session.commit()
-            report = await self._llm.generate_conversation_report(
-                transcript=relabeled_transcript,
-                prosody_scores=prosody_scores,
-                scene=conversation.scene.value,
-                previous_round_context=previous_round_context,
-                missing_speaker_note=missing_speaker_note,
-            )
-            await self._recordings.set_flow(recording, report.flow)
-            await self._recordings.set_reaction(recording, report.other_reaction)
-            await self._recordings.set_relationship(recording, report.relationship_distance)
-            await self._recordings.set_suggestion(
-                recording, report.suggestion_category, report.suggestion_text
-            )
-            await self._recordings.set_status(recording, RecordingStatus.COMPLETED)
-            await self._session.commit()
+                    f"解析に時間がかかりすぎたため中断しました（{stage_label}に時間が"
+                    "かかっています）。もう一度お試しください。"
+                ) from None
 
         except RuntimeError as exc:
             # Our own explicitly-raised messages above are already
@@ -222,12 +135,141 @@ class AnalysisService:
             await self._session.commit()
         finally:
             # §11.5 / §8: temp audio (mixed + per-speaker clips) is deleted
-            # unconditionally, success or failure.
+            # unconditionally, success or failure. speaker_clips is filled
+            # in-place by _run_pipeline (not reassigned here) specifically
+            # so a mid-flight timeout cancellation still leaves whatever
+            # was already sliced visible for cleanup.
             if wav_path is not None:
                 delete_temp_file(wav_path)
             delete_speaker_clips(speaker_clips)
             await self._recordings.clear_temp_audio_path(recording)
             await self._session.commit()
+
+    async def _run_pipeline(
+        self, recording: Recording, wav_path: str | None, speaker_clips: dict[str, str]
+    ) -> None:
+        """The actual STT->speaker-id->prosody->LLM pipeline (§3.2), wrapped
+        by run() in a single overall asyncio.wait_for deadline rather than
+        per-step timeouts (2026-08-12 user instruction)."""
+        if wav_path is None:
+            raise RuntimeError("録音ファイルが見つかりません。")
+
+        conversation = await self._session.get(Conversation, recording.conversation_id)
+        if conversation is None:
+            raise RuntimeError("会話が見つかりません。")
+
+        # 1. STT — diarized transcript (§3.3: split happens once, here)
+        await self._recordings.set_stage(recording, AnalysisStage.ANALYZING_CONVERSATION)
+        await self._session.commit()
+        stt_result = await self._stt.transcribe(wav_path)
+        if not stt_result.segments:
+            raise RuntimeError("音声が検出できませんでした。マイクの位置を確認し、もう一度お試しください。")
+
+        # 2. Fast topic extraction — §11.6 progressive reveal
+        topic = await self._llm.extract_topic(transcript=stt_result.full_transcript)
+        await self._recordings.set_topic(recording, topic)
+        await self._session.commit()
+
+        # 3. §12: resolve which diarized speaker is "self" via voice-
+        # profile cosine similarity, then relabel the transcript.
+        await self._recordings.set_stage(recording, AnalysisStage.SEPARATING_SPEAKERS)
+        await self._session.commit()
+        # .update(), not reassignment — speaker_clips is the same dict the
+        # caller's `finally` cleans up, so a mid-flight timeout cancellation
+        # still leaves whatever was already sliced visible for deletion.
+        speaker_clips.update(await slice_audio_by_speaker(wav_path, stt_result.segments))
+        resolution = await self._resolve_speakers(conversation.user_id, speaker_clips)
+
+        if resolution.self_label is None and resolution.other_label is None:
+            raise RuntimeError(
+                "話者の識別に失敗しました。設定画面から声紋の登録状況をご確認のうえ、"
+                "もう一度お試しください。"
+            )
+
+        # 話者が1人しか分離できなかった場合でも、声紋照合で「誰だったか」
+        # は分かるので、エラーで止めずレポート生成まで進める
+        # （2026-08-12ユーザー指示、①の修正から発展）。検出できなかった
+        # 側については無理に推測させず、その旨をLLMに伝えて正直に
+        # 書かせる（missing_speaker_note、claude.py参照）。UIにも
+        # single_speaker_detectedとして開示する。
+        missing_speaker_note: str | None = None
+        if resolution.self_only:
+            missing_speaker_note = (
+                "相手の発言を検出できませんでした。文字起こしはあなたの発言のみです。"
+            )
+        elif resolution.other_only:
+            missing_speaker_note = (
+                "あなたの発言を検出できませんでした。文字起こしは相手の発言のみです。"
+            )
+        if missing_speaker_note is not None:
+            await self._recordings.set_single_speaker_detected(recording, True)
+            await self._session.commit()
+
+        self_label = resolution.self_label
+        other_label = resolution.other_label
+
+        # 「あなた」「相手」は英語の[user]/[other]タグのままLLMに渡すと、
+        # 生成文中に"userが〜""otherも〜"と英語のまま出力されてしまう
+        # ため（実際に確認済み）、最初から日本語ラベルで渡す。
+        relabeled_transcript = "\n".join(
+            f"[{'あなた' if seg.speaker_label == self_label else '相手'}] {seg.text}"
+            for seg in stt_result.segments
+        )
+
+        # 4. Prosody — on the OTHER speaker's clip specifically: the
+        # value proposition (§2, §3.1) is reading the conversation
+        # partner's reaction, not the user's own tone. §12.3 確定事項25:
+        # AmiVoice bundles ESAS sentiment into the same STT call, so
+        # when available it's used directly instead of a second vendor
+        # call (slice_audio_by_speaker's per-speaker clip is only
+        # needed as a fallback path here — §12's self/other resolution
+        # above still needs it regardless of STT vendor).
+        # other_label is None specifically in the self_only case (§12,
+        # missing_speaker_note above) — no other-speaker clip exists to
+        # get prosody from at all, so skip it entirely rather than
+        # erroring. other_only DOES still have other_label set, so
+        # prosody on the other speaker's tone remains available even
+        # without the user's own audio.
+        prosody_scores: dict[str, float] = {}
+        if other_label is not None:
+            if stt_result.raw_vendor_response is not None:
+                other_segments = [
+                    seg for seg in stt_result.segments if seg.speaker_label == other_label
+                ]
+                prosody_scores = extract_prosody_scores(stt_result.raw_vendor_response, other_segments)
+            if not prosody_scores:
+                try:
+                    prosody_result = await self._prosody.analyze(speaker_clips[other_label])
+                    prosody_scores = prosody_result.scores
+                except NotImplementedError:
+                    # §3.6 no separate prosody vendor active — proceed
+                    # without prosody input, not as a failure
+                    # (Realtime-only-style degradation).
+                    prosody_scores = {}
+
+        # 5. Full interpretive report (Sonnet 5, §11.11-compliant prompt).
+        # Prior-round context (if this isn't round 1) gives the model
+        # continuity across a multi-round conversation session, though
+        # the prompt explicitly tells it not to let this override
+        # what THIS round's actual content shows (claude.py).
+        previous_round_context = await self._build_previous_round_context(recording)
+        await self._recordings.set_stage(recording, AnalysisStage.GENERATING_REPORT)
+        await self._session.commit()
+        report = await self._llm.generate_conversation_report(
+            transcript=relabeled_transcript,
+            prosody_scores=prosody_scores,
+            scene=conversation.scene.value,
+            previous_round_context=previous_round_context,
+            missing_speaker_note=missing_speaker_note,
+        )
+        await self._recordings.set_flow(recording, report.flow)
+        await self._recordings.set_reaction(recording, report.other_reaction)
+        await self._recordings.set_relationship(recording, report.relationship_distance)
+        await self._recordings.set_suggestion(
+            recording, report.suggestion_category, report.suggestion_text
+        )
+        await self._recordings.set_status(recording, RecordingStatus.COMPLETED)
+        await self._session.commit()
 
     async def _resolve_speakers(
         self, user_id: uuid.UUID, speaker_clips: dict[str, str]

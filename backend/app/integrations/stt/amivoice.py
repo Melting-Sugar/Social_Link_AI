@@ -12,10 +12,11 @@ _POLL_URL = "https://acp-api-async.amivoice.com/v1/recognitions/{session_id}"
 _ENGINE = "-a-general"  # contracted plan: 会話_汎用 (確定事項25)
 
 _POLL_INTERVAL_SECONDS = 2.0
-# Generous: single-request latency tracks ~1x realtime (確定事項26), but
-# queueing under concurrent load can add well over a minute (確定事項28,
-# still unconfirmed with AmiVoice support) — timeout errs on the side of
-# not killing a request that's merely queued.
+# 2026-08-12ユーザー指示以降、実際に効いているのはanalysis_service.pyの
+# 解析パイプライン全体の300秒締め切り（_PIPELINE_TIMEOUT_SECONDS）の方 —
+# こちらは常にそれより先に発火するため、実運用上の主たる制約ではない。
+# この値はこのクラス単体を（テストスクリプト等から）直接呼ぶ場合のための
+# バックストップとして、あえて緩めに残してある。
 _POLL_TIMEOUT_SECONDS = 600.0
 
 

@@ -188,6 +188,7 @@ function AnalyzingPhase({ recording }: { recording: RecordingResponse }) {
       <p className="text-[11.5px] text-ink-soft">
         {recording.current_stage ? ANALYSIS_STAGE_LABELS[recording.current_stage] : "準備しています..."}
       </p>
+      <p className="text-[10.5px] text-ink-soft">通常、60秒ほどで解析が完了します</p>
       {recording.topic_ready && (
         <div className="mt-3 w-full max-w-xs rounded-xl bg-coral-tint px-3.5 py-2.5 text-left text-[11.5px] font-bold text-ink">
           話題：{recording.topic}

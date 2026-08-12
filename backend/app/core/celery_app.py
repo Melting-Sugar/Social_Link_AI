@@ -21,15 +21,15 @@ celery_app.conf.update(
     result_serializer="json",
     timezone="Asia/Tokyo",
     enable_utc=True,
-    # A second, independent safety net beyond amivoice.py's own 600s
-    # polling ceiling — if that ever fails to fire (bug, or some other
-    # unanticipated hang), a stuck task would otherwise occupy one of the
-    # worker pool's slots forever with nothing to reclaim it. soft fires
-    # first (raises SoftTimeLimitExceeded, letting the task's `finally`
-    # block still run — §11.5's temp-audio cleanup); hard guarantees the
-    # process actually dies if soft is somehow swallowed.
-    task_soft_time_limit=840,
-    task_time_limit=900,
+    # 2026-08-12ユーザー指示で analysis_service.py 側に解析パイプライン
+    # 全体で1本の締め切り（300秒、_PIPELINE_TIMEOUT_SECONDS）を設けたため、
+    # 通常はそちらが必ず先に発火し、素直にFAILEDへ倒す（finally節のクリーン
+    # アップも正常に走る）。ここは「その仕組み自体が何らかの理由で機能
+    # しなかった場合」のための、独立した第二の安全網 — 300秒に近い値に
+    # しておくことで、万一の際もユーザーを長時間待たせない（以前は840/900
+    # 秒だった。§11.5の一時ファイル削除はsoft発火時点でも実行される）。
+    task_soft_time_limit=330,
+    task_time_limit=360,
 )
 
 # §5 確定事項16 / §11.5: unsaved Conversations and any orphaned temp audio

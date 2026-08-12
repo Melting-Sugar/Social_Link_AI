@@ -30,6 +30,10 @@ class AmiVoiceProvider(STTProvider):
 
     診断対象は自分/相手の2名（§12.1）のみのため、diarizationMinSpeaker/
     MaxSpeakerは2に固定。
+
+    §8: 生音声は保存しない方針だが、AmiVoiceの非同期HTTPは既定でログ
+    （音声データ＋認識結果）を保存する仕様（公式ドキュメント確認済み）。
+    loggingOptOut=Trueを明示しないとベンダー側に残ってしまうため必須。
     """
 
     def __init__(self) -> None:
@@ -54,7 +58,8 @@ class AmiVoiceProvider(STTProvider):
                 "u": self._api_key,
                 "d": (
                     f"grammarFileNames={_ENGINE} speakerDiarization=True "
-                    "diarizationMinSpeaker=2 diarizationMaxSpeaker=2 sentimentAnalysis=True"
+                    "diarizationMinSpeaker=2 diarizationMaxSpeaker=2 sentimentAnalysis=True "
+                    "loggingOptOut=True"
                 ),
             },
             files={"a": audio_bytes},

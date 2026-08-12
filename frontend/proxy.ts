@@ -37,10 +37,18 @@ export function proxy(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  if (isPublicPath && hasRefreshCookie && pathname !== "/reset-password") {
+  const AUTH_ONLY_REDIRECT_EXEMPT = ["/reset-password", "/terms", "/privacy"];
+  const isExemptFromAuthRedirect = AUTH_ONLY_REDIRECT_EXEMPT.some(
+    (p) => pathname === p || pathname.startsWith(`${p}/`),
+  );
+
+  if (isPublicPath && hasRefreshCookie && !isExemptFromAuthRedirect) {
     // Already have a session — no reason to show login/register again.
     // /reset-password is exempt: it's reached via an emailed link and
-    // must work even for an already-logged-in browser.
+    // must work even for an already-logged-in browser. /terms and /privacy
+    // are exempt for the opposite reason this whole block exists — they're
+    // legal documents a logged-in user (settings tab, voice-enroll) needs
+    // to reach too, not just a logged-out visitor.
     return NextResponse.redirect(new URL("/", request.url));
   }
 

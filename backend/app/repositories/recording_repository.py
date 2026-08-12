@@ -66,6 +66,10 @@ class RecordingRepository:
         recording.current_stage = stage
         await self._session.flush()
 
+    async def set_single_speaker_detected(self, recording: Recording, value: bool) -> None:
+        recording.single_speaker_detected = value
+        await self._session.flush()
+
     async def set_topic(self, recording: Recording, topic: str) -> None:
         recording.topic = topic
         recording.topic_ready = True

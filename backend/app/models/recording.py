@@ -55,6 +55,9 @@ class Recording(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         Enum(AnalysisStage, native_enum=False), nullable=True
     )
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 話者分離で片方しか検出できなかった場合でもレポート生成は続行するが
+    # （2026-08-12ユーザー指示）、その旨をUIで正直に開示するためのフラグ。
+    single_speaker_detected: Mapped[bool] = mapped_column(default=False)
 
     # 機能① の出力（§2, §11.1 A-④）。「会話の流れ」「相手の反応」「関係性の
     # 距離感」はAIの解釈が介在するため、断定調ではなく推定を示す文言で

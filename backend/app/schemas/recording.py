@@ -16,6 +16,7 @@ class RecordingResponse(BaseModel):
     status: RecordingStatus
     current_stage: AnalysisStage | None
     error_message: str | None
+    single_speaker_detected: bool
 
     topic: str | None
     topic_ready: bool

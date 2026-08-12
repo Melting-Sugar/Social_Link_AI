@@ -53,6 +53,7 @@ export interface RecordingResponse {
   status: "pending" | "processing" | "completed" | "failed";
   current_stage: AnalysisStage | null;
   error_message: string | null;
+  single_speaker_detected: boolean;
   topic: string | null;
   topic_ready: boolean;
   flow: string | null;

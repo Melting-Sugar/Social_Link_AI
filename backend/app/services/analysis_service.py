@@ -106,28 +106,34 @@ class AnalysisService:
                     "話者の識別に失敗しました。設定画面から声紋の登録状況をご確認のうえ、"
                     "もう一度お試しください。"
                 )
+
+            # 話者が1人しか分離できなかった場合でも、声紋照合で「誰だったか」
+            # は分かるので、エラーで止めずレポート生成まで進める
+            # （2026-08-12ユーザー指示、①の修正から発展）。検出できなかった
+            # 側については無理に推測させず、その旨をLLMに伝えて正直に
+            # 書かせる（missing_speaker_note、claude.py参照）。UIにも
+            # single_speaker_detectedとして開示する。
+            missing_speaker_note: str | None = None
             if resolution.self_only:
-                # ユーザー提案の設計: 話者が1人しか分離できなかった場合でも
-                # 声紋照合で「誰だったか」は分かる。相手の発言が無いのに
-                # other_reactionをLLMに捏造させるのではなく、その旨を正直に
-                # 伝える（①の修正）。
-                raise RuntimeError(
-                    "このラウンドでは、ご自身の発言のみが検出されました（相手の発言は"
-                    "検出できませんでした）。お二人での会話を録音すると、より詳しい"
-                    "分析が行えます。"
+                missing_speaker_note = (
+                    "相手の発言を検出できませんでした。文字起こしはあなたの発言のみです。"
                 )
-            if resolution.other_only:
-                raise RuntimeError(
-                    "このラウンドでは、相手の発言のみが検出されました（ご自身の発言は"
-                    "検出できませんでした）。マイクの位置をご確認のうえ、もう一度"
-                    "お試しください。"
+            elif resolution.other_only:
+                missing_speaker_note = (
+                    "あなたの発言を検出できませんでした。文字起こしは相手の発言のみです。"
                 )
+            if missing_speaker_note is not None:
+                await self._recordings.set_single_speaker_detected(recording, True)
+                await self._session.commit()
 
             self_label = resolution.self_label
             other_label = resolution.other_label
 
+            # 「あなた」「相手」は英語の[user]/[other]タグのままLLMに渡すと、
+            # 生成文中に"userが〜""otherも〜"と英語のまま出力されてしまう
+            # ため（実際に確認済み）、最初から日本語ラベルで渡す。
             relabeled_transcript = "\n".join(
-                f"[{'user' if seg.speaker_label == self_label else 'other'}] {seg.text}"
+                f"[{'あなた' if seg.speaker_label == self_label else '相手'}] {seg.text}"
                 for seg in stt_result.segments
             )
 
@@ -139,23 +145,28 @@ class AnalysisService:
             # call (slice_audio_by_speaker's per-speaker clip is only
             # needed as a fallback path here — §12's self/other resolution
             # above still needs it regardless of STT vendor).
-            # other_label is guaranteed non-None here — self_only/other_only
-            # cases already returned above.
+            # other_label is None specifically in the self_only case (§12,
+            # missing_speaker_note above) — no other-speaker clip exists to
+            # get prosody from at all, so skip it entirely rather than
+            # erroring. other_only DOES still have other_label set, so
+            # prosody on the other speaker's tone remains available even
+            # without the user's own audio.
             prosody_scores: dict[str, float] = {}
-            if stt_result.raw_vendor_response is not None:
-                other_segments = [
-                    seg for seg in stt_result.segments if seg.speaker_label == other_label
-                ]
-                prosody_scores = extract_prosody_scores(stt_result.raw_vendor_response, other_segments)
-            if not prosody_scores:
-                try:
-                    prosody_result = await self._prosody.analyze(speaker_clips[other_label])
-                    prosody_scores = prosody_result.scores
-                except NotImplementedError:
-                    # §3.6 no separate prosody vendor active — proceed
-                    # without prosody input, not as a failure
-                    # (Realtime-only-style degradation).
-                    prosody_scores = {}
+            if other_label is not None:
+                if stt_result.raw_vendor_response is not None:
+                    other_segments = [
+                        seg for seg in stt_result.segments if seg.speaker_label == other_label
+                    ]
+                    prosody_scores = extract_prosody_scores(stt_result.raw_vendor_response, other_segments)
+                if not prosody_scores:
+                    try:
+                        prosody_result = await self._prosody.analyze(speaker_clips[other_label])
+                        prosody_scores = prosody_result.scores
+                    except NotImplementedError:
+                        # §3.6 no separate prosody vendor active — proceed
+                        # without prosody input, not as a failure
+                        # (Realtime-only-style degradation).
+                        prosody_scores = {}
 
             # 5. Full interpretive report (Sonnet 5, §11.11-compliant prompt).
             # Prior-round context (if this isn't round 1) gives the model
@@ -170,6 +181,7 @@ class AnalysisService:
                 prosody_scores=prosody_scores,
                 scene=conversation.scene.value,
                 previous_round_context=previous_round_context,
+                missing_speaker_note=missing_speaker_note,
             )
             await self._recordings.set_flow(recording, report.flow)
             await self._recordings.set_reaction(recording, report.other_reaction)

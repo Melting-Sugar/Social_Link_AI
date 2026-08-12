@@ -209,6 +209,11 @@ function ResultPhase({
   return (
     <div className="flex flex-1 flex-col">
       <div className="flex-1 overflow-y-auto px-4 py-4">
+        {recording.single_speaker_detected && (
+          <div className="mb-3 rounded-xl bg-caution-tint px-3.5 py-2.5 text-[11px] leading-relaxed text-ink">
+            今回は片方の発言のみで解析しました。相手の反応など、判断できない項目があります。
+          </div>
+        )}
         {/* §11.11: AI推定である旨を常時表示 */}
         <p className="mb-3 text-[10.5px] text-ink-soft">AIによる推定です。実際の状況と異なる場合があります。</p>
 

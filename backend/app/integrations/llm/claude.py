@@ -90,10 +90,13 @@ class SummaryResult:
 _REPORT_SYSTEM_PROMPT = """\
 あなたはASD等コミュニケーションに難がある方の対話を支援するアプリのバックエンドで、
 会話分析を行うアシスタントです。1ラウンド分の会話の文字起こし（発言者は
-user=アプリ利用者本人、other=会話の相手、と話者識別済み）と、可能であれば声の
+あなた=アプリ利用者本人、相手=会話の相手、と話者識別済み）と、可能であれば声の
 トーンから推定した感情スコアを受け取り、構造化されたレポートを生成します。
 
 出力は必ずsubmit_conversation_reportツールで返してください。各フィールドの方針：
+
+- flow・other_reactionの文中で話者に言及する際は、必ず「あなた」「相手」という
+  日本語で書いてください（"user"や"other"という英語のラベルをそのまま出力しない）。
 
 - 場面（例：職場、初対面）ごとに、期待される言葉遣いや距離感の基準は異なります。
   例えば初対面や職場での硬さは通常の範囲内である一方、友人や恋愛の場面で同程度の
@@ -106,6 +109,13 @@ user=アプリ利用者本人、other=会話の相手、と話者識別済み）
   上書きする根拠にはしないでください。relationship_distanceは前回の値に引きずられず、
   あくまで今回の文字起こし・プロソディから判断した上で、前回との変化があれば
   flowやother_reactionの記述の中で「前回よりも〜」のように触れてください。
+- 話者分離が片方の発言しか検出できなかった旨の注意書きが提供されている場合：
+  検出できなかった側についての判断材料は無いので、該当する項目（多くは
+  other_reaction）は「相手の発言が検出されなかったため、反応は判断できません」
+  のように、無理に推測せず正直に書いてください。relationship_distanceは
+  判断材料が無い場合no_changeとしてください。flow・suggestion_textは、
+  検出できた側の発言内容・（あれば）プロソディから分かる範囲で構いません。
+  検出できなかった側の発言を勝手に補って書かないでください。
 - flow（会話の流れ）、other_reaction（相手の反応）: あなたの解釈が入る項目です。
   「〜になっています」のような言い切りではなく、「〜ように見えます」等、推定である
   ことが伝わる言い回しにしてください。誤った断定は、実際にはそうでない状況を
@@ -248,12 +258,15 @@ class ClaudeClient:
         scene: str,
         mood_context: str | None = None,
         previous_round_context: str | None = None,
+        missing_speaker_note: str | None = None,
     ) -> ConversationReport:
         user_content = (
             f"場面: {_SCENE_LABELS_JA.get(scene, scene)}\n"
             f"文字起こし:\n{transcript}\n\n"
             f"プロソディ感情スコア: {_format_prosody_scores(prosody_scores)}\n"
         )
+        if missing_speaker_note:
+            user_content += f"\n注意: {missing_speaker_note}\n"
         if previous_round_context:
             user_content += f"\n直前のラウンドの分析結果（参考情報。今回の判定はこのラウンドの内容を優先すること）: {previous_round_context}\n"
         if mood_context:

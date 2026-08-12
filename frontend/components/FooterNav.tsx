@@ -108,7 +108,7 @@ export function FooterNav() {
                 onClick={() => setPendingHref(null)}
                 className="flex-1 rounded-2xl border border-line bg-surface px-3.5 py-2.5 text-[12.5px] font-bold text-ink transition-colors active:bg-surface-sunken"
               >
-                キャンセル
+                いいえ
               </button>
               <button
                 type="button"

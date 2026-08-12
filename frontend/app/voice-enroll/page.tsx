@@ -1,11 +1,12 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { PrimaryButton } from "@/components/ui/PrimaryButton";
 import { TextLink } from "@/components/ui/TextLink";
 import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import { ApiError } from "@/lib/api-client";
+import { useNavigationGuard } from "@/lib/navigation-guard-context";
 import { voiceProfileApi } from "@/lib/voice-profile-api";
 
 function VoiceEnrollForm() {
@@ -15,6 +16,14 @@ function VoiceEnrollForm() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { isRecording, elapsedSeconds, audioBlob, error, start, stop, reset } = useAudioRecorder();
+
+  // 録音中・登録処理中に不用意にフッターナビへ移動して録り直しになる
+  // ことを防ぐ（2026-08-12ユーザー指示、会話サポート画面と同じガード）。
+  const { setGuarded } = useNavigationGuard();
+  useEffect(() => {
+    setGuarded(isRecording || isSubmitting);
+    return () => setGuarded(false);
+  }, [isRecording, isSubmitting, setGuarded]);
 
   const handleSubmit = async () => {
     if (!audioBlob) return;

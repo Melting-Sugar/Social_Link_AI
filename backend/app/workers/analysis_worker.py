@@ -2,7 +2,7 @@ import asyncio
 import uuid
 
 from app.core.celery_app import celery_app
-from app.core.db import async_session_factory
+from app.core.db import worker_session_factory
 from app.services.analysis_service import AnalysisService
 
 
@@ -15,5 +15,5 @@ def analyze_recording_task(recording_id: str) -> None:
 
 
 async def _run(recording_id: uuid.UUID) -> None:
-    async with async_session_factory() as session:
+    async with worker_session_factory() as session:
         await AnalysisService(session).run(recording_id)

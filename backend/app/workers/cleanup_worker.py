@@ -3,7 +3,7 @@ from datetime import UTC, datetime, timedelta
 
 from app.audio.temp_storage import delete_temp_file
 from app.core.celery_app import celery_app
-from app.core.db import async_session_factory
+from app.core.db import worker_session_factory
 from app.repositories.conversation_repository import ConversationRepository
 from app.repositories.recording_repository import RecordingRepository
 
@@ -27,7 +27,7 @@ async def _cleanup_unsaved_conversations() -> None:
     signal (closing a tab fires nothing), so this periodic sweep is the
     actual enforcement mechanism, not just a backstop."""
     cutoff = datetime.now(UTC) - _UNSAVED_CONVERSATION_CUTOFF
-    async with async_session_factory() as session:
+    async with worker_session_factory() as session:
         repo = ConversationRepository(session)
         for conversation in await repo.get_unsaved_older_than(cutoff):
             await repo.delete(conversation)
@@ -38,7 +38,7 @@ async def _cleanup_orphaned_temp_audio() -> None:
     """§11.5 safety net: catches temp audio a worker failed to delete in
     its own `finally` block (e.g. a crash mid-pipeline)."""
     cutoff = datetime.now(UTC) - _ORPHANED_AUDIO_CUTOFF
-    async with async_session_factory() as session:
+    async with worker_session_factory() as session:
         repo = RecordingRepository(session)
         for recording in await repo.get_orphaned_temp_files(cutoff):
             if recording.temp_audio_path:

@@ -34,6 +34,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(async () => {
     try {
       await authApi.logout();
+    } catch {
+      // Best-effort: a network failure here shouldn't stop the caller from
+      // navigating to /login below — we still drop local auth state either
+      // way, and a still-valid server-side session cookie left behind by a
+      // failed call expires on its own.
     } finally {
       setAccessToken(null);
       setIsAuthenticated(false);

@@ -38,12 +38,21 @@ async function request<T>(path: string, options: RequestInit = {}, allowRetry = 
     headers.set("Content-Type", "application/json");
   }
 
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    headers,
-    // Sends the httpOnly refresh-token cookie on /api/auth/* calls (§5).
-    credentials: "include",
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, {
+      ...options,
+      headers,
+      // Sends the httpOnly refresh-token cookie on /api/auth/* calls (§5).
+      credentials: "include",
+    });
+  } catch {
+    // fetch() itself rejects on a network-level failure (offline, backend
+    // unreachable, etc.) — distinct from an HTTP error status, and was
+    // previously left to propagate as a raw, uncaught TypeError (e.g. out
+    // of AuthProvider's logout(), which had no catch to stop it).
+    throw new ApiError(0, "通信エラーが発生しました。通信環境をご確認のうえ、もう一度お試しください。");
+  }
 
   if (res.status === 401 && allowRetry && path !== "/api/auth/refresh") {
     const refreshed = await refreshAccessToken();
@@ -58,23 +67,40 @@ async function request<T>(path: string, options: RequestInit = {}, allowRetry = 
   return (await res.json()) as T;
 }
 
-export async function refreshAccessToken(): Promise<boolean> {
+async function attemptRefresh(): Promise<Response | null> {
   try {
-    const res = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
+    return await fetch(`${API_BASE_URL}/api/auth/refresh`, {
       method: "POST",
       credentials: "include",
     });
-    if (!res.ok) {
-      accessToken = null;
-      return false;
-    }
-    const data = (await res.json()) as { access_token: string };
-    accessToken = data.access_token;
-    return true;
   } catch {
+    return null;
+  }
+}
+
+// A network-level failure here (backend momentarily unreachable — e.g. a
+// deploy restart) is not proof the session is invalid, but AuthProvider
+// only calls this once, on mount, with no retry of its own. Treating a
+// single blip the same as "not logged in" left a tab permanently showing
+// logged-out (header/footer gone, protected pages bouncing back) until
+// the next full reload happened to land outside the failure window — a
+// real 401 (revoked/expired refresh token) means don't bother retrying.
+const _RETRY_DELAYS_MS = [500, 1000];
+
+export async function refreshAccessToken(): Promise<boolean> {
+  let res = await attemptRefresh();
+  for (let i = 0; res === null && i < _RETRY_DELAYS_MS.length; i++) {
+    await new Promise((resolve) => setTimeout(resolve, _RETRY_DELAYS_MS[i]));
+    res = await attemptRefresh();
+  }
+
+  if (res === null || !res.ok) {
     accessToken = null;
     return false;
   }
+  const data = (await res.json()) as { access_token: string };
+  accessToken = data.access_token;
+  return true;
 }
 
 export const apiClient = {

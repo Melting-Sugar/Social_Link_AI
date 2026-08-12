@@ -9,21 +9,27 @@ import { ApiError } from "@/lib/api-client";
 import { useNavigationGuard } from "@/lib/navigation-guard-context";
 import { voiceProfileApi } from "@/lib/voice-profile-api";
 
+const MAX_RECORDING_SECONDS = 60; // 会話サポートの録音画面と同じ上限（§11.3）
+
 function VoiceEnrollForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const returnTo = searchParams.get("next") ?? "/settings";
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const { isRecording, elapsedSeconds, audioBlob, error, start, stop, reset } = useAudioRecorder();
+  const { isRecording, elapsedSeconds, audioBlob, error, start, stop, reset } = useAudioRecorder({
+    maxSeconds: MAX_RECORDING_SECONDS,
+  });
 
-  // 録音中・登録処理中に不用意にフッターナビへ移動して録り直しになる
-  // ことを防ぐ（2026-08-12ユーザー指示、会話サポート画面と同じガード）。
+  // 録音中・録音済み未送信・登録処理中に不用意にフッターナビへ移動して
+  // 録り直しになることを防ぐ（2026-08-12ユーザー指示、会話サポート画面と
+  // 同じガード）。audioBlobがある＝録音は完了したがまだ登録ボタンを押して
+  // いない状態も、離脱すると録音内容が失われるためガード対象に含める。
   const { setGuarded } = useNavigationGuard();
   useEffect(() => {
-    setGuarded(isRecording || isSubmitting);
+    setGuarded(isRecording || isSubmitting || audioBlob !== null);
     return () => setGuarded(false);
-  }, [isRecording, isSubmitting, setGuarded]);
+  }, [isRecording, isSubmitting, audioBlob, setGuarded]);
 
   const handleSubmit = async () => {
     if (!audioBlob) return;
@@ -68,6 +74,7 @@ function VoiceEnrollForm() {
               <p className="text-[12px] text-ink-soft">
                 {isRecording ? `録音中 ${elapsedSeconds}秒` : "ボタンを押して録音を開始"}
               </p>
+              <p className="text-[10.5px] text-ink-soft">上限{MAX_RECORDING_SECONDS}秒</p>
               {error && <p className="text-[12px] text-ink">{error}</p>}
             </>
           ) : (

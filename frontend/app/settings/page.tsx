@@ -3,7 +3,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { PrimaryButton } from "@/components/ui/PrimaryButton";
 import { authApi } from "@/lib/auth-api";
 import { useAuth } from "@/lib/auth-context";
@@ -15,6 +15,11 @@ export default function SettingsPage() {
   const queryClient = useQueryClient();
   const [isBusy, setIsBusy] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  // isBusy(state)だけをガードにすると、Reactの再描画が1回挟まるまでの
+  // わずかな間に連打が両方通ってしまう（ボタンのdisabledは再描画後にしか
+  // 反映されない）。refは同期的に読み書きできるため、その隙間を塞げる。
+  // 3つのハンドラで1つのisBusyを共有しているのに合わせ、refも共有する。
+  const isBusyRef = useRef(false);
 
   const { data: profileStatus } = useQuery({
     queryKey: ["voice-profile-status"],
@@ -23,28 +28,36 @@ export default function SettingsPage() {
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: () => authApi.me() });
 
   const handleLogout = async () => {
+    if (isBusyRef.current) return;
+    isBusyRef.current = true;
     setIsBusy(true);
     await logout();
     router.push("/login");
   };
 
   const handleDeleteVoiceProfile = async () => {
+    if (isBusyRef.current) return;
+    isBusyRef.current = true;
     setIsBusy(true);
     try {
       await voiceProfileApi.delete();
       await queryClient.invalidateQueries({ queryKey: ["voice-profile-status"] });
     } finally {
+      isBusyRef.current = false;
       setIsBusy(false);
     }
   };
 
   const handleDeleteAccount = async () => {
+    if (isBusyRef.current) return;
+    isBusyRef.current = true;
     setIsBusy(true);
     try {
       await authApi.deleteAccount();
       await logout();
       router.push("/login");
     } finally {
+      isBusyRef.current = false;
       setIsBusy(false);
     }
   };

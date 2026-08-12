@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { PrimaryButton } from "@/components/ui/PrimaryButton";
 import { TextLink } from "@/components/ui/TextLink";
 import { useAudioRecorder } from "@/hooks/useAudioRecorder";
@@ -31,8 +31,14 @@ function VoiceEnrollForm() {
     return () => setGuarded(false);
   }, [isRecording, isSubmitting, audioBlob, setGuarded]);
 
+  // isSubmitting(state)だけをガードにすると、Reactの再描画が1回挟まる
+  // までのわずかな間に連打が両方通ってしまう（ボタンのdisabledは再描画後
+  // にしか反映されない）。refは同期的に読み書きできるため、その隙間を
+  // 塞げる。
+  const isSubmittingRef = useRef(false);
   const handleSubmit = async () => {
-    if (!audioBlob) return;
+    if (!audioBlob || isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
     setSubmitError(null);
     setIsSubmitting(true);
     try {
@@ -41,6 +47,7 @@ function VoiceEnrollForm() {
     } catch (err) {
       setSubmitError(err instanceof ApiError ? err.message : "声紋の登録に失敗しました。");
     } finally {
+      isSubmittingRef.current = false;
       setIsSubmitting(false);
     }
   };

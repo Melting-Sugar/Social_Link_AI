@@ -7,8 +7,8 @@ import httpx
 from app.core.config import get_settings
 from app.integrations.stt.base import STTProvider, STTResult, STTSegment
 
-_SUBMIT_URL = "https://acp-api-async.amivoice.com/v1/recognitions"
-_POLL_URL = "https://acp-api-async.amivoice.com/v1/recognitions/{session_id}"
+_SUBMIT_URL = "https://acp-api-async.amivoice.com/v2/recognitions"
+_POLL_URL = "https://acp-api-async.amivoice.com/v2/recognitions/{session_id}"
 _ENGINE = "-a-general"  # contracted plan: 会話_汎用 (確定事項25)
 
 _POLL_INTERVAL_SECONDS = 2.0
@@ -35,6 +35,13 @@ class AmiVoiceProvider(STTProvider):
     §8: 生音声は保存しない方針だが、AmiVoiceの非同期HTTPは既定でログ
     （音声データ＋認識結果）を保存する仕様（公式ドキュメント確認済み）。
     loggingOptOut=Trueを明示しないとベンダー側に残ってしまうため必須。
+
+    非同期HTTPインタフェースはv2を使用（v1は2026年12月31日で提供終了予定
+    — 公式発表2026-08-12確認済み、エンドポイント以外の差分なし・
+    loggingOptOutも同様に有効）。v1/v2で感情分析エンジンのバージョンが
+    異なり同一音声でも感情パラメータの値は厳密には一致しないとベンダー
+    公式が明言しているが、claude.pyの_PROSODY_PARAM_INFOが前提とする値域
+    （0〜100等）自体は実測でv2でも維持されていることを確認済み。
     """
 
     def __init__(self) -> None:

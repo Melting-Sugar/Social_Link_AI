@@ -13,10 +13,10 @@ RUN pip install --no-cache-dir uv
 WORKDIR /app
 
 COPY pyproject.toml ./
-RUN uv sync --no-install-project
+RUN uv sync --extra speaker-id --no-install-project
 
 COPY . .
-RUN uv sync
+RUN uv sync --extra speaker-id
 
 ENV PATH="/app/.venv/bin:$PATH"
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { PrimaryButton } from "@/components/ui/PrimaryButton";
@@ -14,6 +15,7 @@ const MAX_RECORDING_SECONDS = 60; // 会話サポートの録音画面と同じ�
 
 function VoiceEnrollForm() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const searchParams = useSearchParams();
   const returnTo = safeInternalPath(searchParams.get("next"), "/settings");
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -43,7 +45,20 @@ function VoiceEnrollForm() {
     setSubmitError(null);
     setIsSubmitting(true);
     try {
-      await voiceProfileApi.register(audioBlob);
+      const result = await voiceProfileApi.register(audioBlob);
+      // setQueryData, not just invalidateQueries: /scene's useQuery has
+      // no active observer while we're still on this page, so
+      // invalidateQueries only marks the cache stale — it doesn't
+      // rewrite it. staleTime is 0, so the moment /scene mounts it
+      // synchronously renders that STILL-STALE { registered: false }
+      // on its first pass (the real refetch lands async, after), and
+      // its effect redirects straight back here before the refetch
+      // ever gets a chance to land. Writing the known-correct result
+      // directly closes that race — /scene's first render already
+      // sees { registered: true }, no redirect fires. invalidateQueries
+      // stays too, as a real revalidation against the server.
+      queryClient.setQueryData(["voice-profile-status"], result);
+      await queryClient.invalidateQueries({ queryKey: ["voice-profile-status"] });
       router.push(returnTo);
     } catch (err) {
       setSubmitError(err instanceof ApiError ? err.message : "声紋の登録に失敗しました。");

@@ -16,7 +16,14 @@ JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = "15"
 REFRESH_TOKEN_EXPIRE_DAYS = "30"
 PASSWORD_RESET_TOKEN_EXPIRE_HOURS = "1"
-EMAIL_FROM_ADDRESS = "noreply@example.com"
+# Resend rejects sends from any domain that isn't verified in the
+# account — onboarding@resend.dev is Resend's own pre-verified address,
+# usable with no setup, but it can only deliver to the Resend account's
+# own registered email (not to real end users). Fine for now since
+# RESEND_API_KEY is the developer's own temporary test-phase key (see
+# docs/依頼者に確認していただきたいこと.txt §2) — swap both once the
+# client's own Resend account has a verified sending domain.
+EMAIL_FROM_ADDRESS = "onboarding@resend.dev"
 STT_PROVIDER = "amivoice"
 PROSODY_PROVIDER = "none"
 SPEAKER_ID_PROVIDER = "ecapa_local"

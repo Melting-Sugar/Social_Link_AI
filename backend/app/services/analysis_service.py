@@ -8,7 +8,7 @@ import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audio.slicing import delete_speaker_clips, slice_audio_by_speaker
-from app.audio.temp_storage import delete_temp_file
+from app.audio.temp_storage import delete_audio_bytes, delete_temp_file, materialize_audio_from_redis
 from app.core.config import get_settings
 from app.integrations.llm.claude import ClaudeClient
 from app.integrations.prosody.factory import get_prosody_provider
@@ -87,12 +87,20 @@ class AnalysisService:
             logger.warning("analysis_service.run: recording %s not found", recording_id)
             return
 
-        wav_path = recording.temp_audio_path
+        # temp_audio_path is just a non-null marker at this point (see
+        # recordings.py) — the actual bytes live in Redis, since this
+        # worker is a separate Fly Machine from the api process that
+        # wrote them, with its own independent local disk. Materializing
+        # here writes a fresh local copy this machine can actually read.
+        wav_path: str | None = None
         speaker_clips: dict[str, str] = {}
 
         try:
             await self._recordings.set_status(recording, RecordingStatus.PROCESSING)
             await self._session.commit()
+
+            if recording.temp_audio_path is not None:
+                wav_path = await materialize_audio_from_redis(str(recording.id))
 
             try:
                 await asyncio.wait_for(
@@ -147,6 +155,7 @@ class AnalysisService:
             if wav_path is not None:
                 delete_temp_file(wav_path)
             delete_speaker_clips(speaker_clips)
+            await delete_audio_bytes(str(recording.id))
             await self._recordings.clear_temp_audio_path(recording)
             await self._session.commit()
 

@@ -1,9 +1,11 @@
+import asyncio
 import uuid
+from pathlib import Path
 
 from fastapi import APIRouter, Form, HTTPException, UploadFile, status
 
 from app.api.deps import CurrentUser, DbSession
-from app.audio.temp_storage import save_upload_and_normalize
+from app.audio.temp_storage import delete_temp_file, save_upload_and_normalize, store_audio_bytes
 from app.core.config import get_settings
 from app.repositories.recording_repository import RecordingRepository
 from app.schemas.recording import RecordingResponse
@@ -24,10 +26,17 @@ async def upload_recording(
     audio: UploadFile,
     duration_sec: int = Form(...),
 ) -> RecordingResponse:
-    """A-③停止時（または30分到達時）。§11.5: normalizes + writes to shared
-    temp storage, creates the Recording row, then hands off to Celery —
-    the actual STT→speaker-id→prosody→LLM pipeline runs out-of-request
-    (analysis_service via app/workers/analysis_worker.py)."""
+    """A-③停止時（または30分到達時）。§11.5: normalizes, creates the
+    Recording row, then hands off to Celery — the actual STT→speaker-id→
+    prosody→LLM pipeline runs out-of-request (analysis_service via
+    app/workers/analysis_worker.py).
+
+    api and the Celery worker are separate Fly Machines with independent
+    local disks, so the normalized audio can't just be left on this
+    machine's filesystem for the worker to read — it goes through Redis
+    instead (temp_storage.store_audio_bytes()); temp_audio_path stays a
+    plain non-null marker ("there is pending audio for this recording"),
+    not a literal path the worker dereferences."""
     settings = get_settings()
     if not (0 < duration_sec <= settings.max_recording_seconds):
         raise HTTPException(
@@ -49,6 +58,10 @@ async def upload_recording(
         temp_audio_path=wav_path,
     )
     await session.commit()
+
+    wav_bytes = await asyncio.to_thread(Path(wav_path).read_bytes)
+    await store_audio_bytes(str(recording.id), wav_bytes)
+    delete_temp_file(wav_path)
 
     # Imported here (not at module load) so this router doesn't force a
     # Celery broker connection just to be imported/tested.

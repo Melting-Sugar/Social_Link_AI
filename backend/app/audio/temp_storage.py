@@ -4,7 +4,14 @@ import subprocess
 import uuid
 from pathlib import Path
 
+import redis.asyncio as redis
+
 from app.core.config import get_settings
+
+# Generous margin over analysis_service.py's 300s pipeline deadline —
+# covers time spent queued behind other tasks plus Celery retries —
+# without leaving orphaned audio in Redis for long after a crash.
+_AUDIO_REDIS_TTL_SECONDS = 3600
 
 
 def _temp_dir() -> Path:
@@ -13,12 +20,62 @@ def _temp_dir() -> Path:
     return path
 
 
+def _redis_key(recording_id: str) -> str:
+    return f"audio:{recording_id}"
+
+
+async def store_audio_bytes(recording_id: str, data: bytes) -> None:
+    """api and worker are separate Fly Machines with independent local
+    disks — a path written by save_upload_and_normalize() on one is
+    invisible to the other (confirmed in production: worker raised
+    FileNotFoundError reading a path the api process had written).
+    Redis is the one thing both processes already share (same
+    REDIS_URL, also the Celery broker), so the normalized bytes ride
+    through there instead; see materialize_audio_from_redis()."""
+    client = redis.from_url(get_settings().redis_url)
+    try:
+        await client.set(_redis_key(recording_id), data, ex=_AUDIO_REDIS_TTL_SECONDS)
+    finally:
+        await client.aclose()
+
+
+async def materialize_audio_from_redis(recording_id: str) -> str | None:
+    """Worker-side counterpart to store_audio_bytes() — fetches the bytes
+    and writes them to a fresh local temp file on THIS machine, since
+    ffmpeg/torchaudio/soundfile all need a real path, not bytes. Returns
+    None if the key is missing (already consumed, or its TTL expired)."""
+    client = redis.from_url(get_settings().redis_url)
+    try:
+        data = await client.get(_redis_key(recording_id))
+    finally:
+        await client.aclose()
+    if data is None:
+        return None
+    path = _temp_dir() / f"{uuid.uuid4()}.wav"
+    path.write_bytes(data)
+    return str(path)
+
+
+async def delete_audio_bytes(recording_id: str) -> None:
+    """Best-effort — safe to call even if the key was never set or
+    already consumed/expired."""
+    client = redis.from_url(get_settings().redis_url)
+    try:
+        await client.delete(_redis_key(recording_id))
+    finally:
+        await client.aclose()
+
+
 async def save_upload_and_normalize(raw_bytes: bytes, *, original_filename: str) -> str:
     """§11.4: iPhone Safari (mp4/AAC) and Chrome (webm/opus) upload
     different formats — normalize to 16kHz/16bit/mono WAV (§3.4, matches
     Azure's native recommended format) via ffmpeg before anything else
-    touches the file. §11.5: this writes into the shared local-disk temp
-    dir that both the API process and the Celery worker can see.
+    touches the file. Writes into the local temp dir of whichever
+    process calls this — the caller is responsible for getting the
+    result to wherever it needs to go next (e.g. recordings.py hands the
+    bytes to store_audio_bytes() for the worker to pick up; voice
+    enrollment consumes the path itself, same-process, no handoff
+    needed).
 
     This is called directly from the upload request handler (not just from
     the Celery worker), so the blocking ffmpeg call runs in a thread — a

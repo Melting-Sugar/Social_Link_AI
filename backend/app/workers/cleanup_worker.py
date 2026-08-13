@@ -1,7 +1,7 @@
 import asyncio
 from datetime import UTC, datetime, timedelta
 
-from app.audio.temp_storage import delete_temp_file
+from app.audio.temp_storage import delete_audio_bytes
 from app.core.celery_app import celery_app
 from app.core.db import worker_session_factory
 from app.repositories.conversation_repository import ConversationRepository
@@ -36,12 +36,18 @@ async def _cleanup_unsaved_conversations() -> None:
 
 async def _cleanup_orphaned_temp_audio() -> None:
     """§11.5 safety net: catches temp audio a worker failed to delete in
-    its own `finally` block (e.g. a crash mid-pipeline)."""
+    its own `finally` block (e.g. a crash mid-pipeline). The bytes live
+    in Redis (temp_audio_path is just a non-null marker — see
+    recordings.py/analysis_service.py), and Redis's own TTL already
+    expires them on its own; this sweep's real job is clearing the DB
+    marker so the recording doesn't look like it's still pending
+    forever, with the delete_audio_bytes() call as a no-op-if-already-
+    gone belt-and-suspenders."""
     cutoff = datetime.now(UTC) - _ORPHANED_AUDIO_CUTOFF
     async with worker_session_factory() as session:
         repo = RecordingRepository(session)
         for recording in await repo.get_orphaned_temp_files(cutoff):
             if recording.temp_audio_path:
-                delete_temp_file(recording.temp_audio_path)
+                await delete_audio_bytes(str(recording.id))
             await repo.clear_temp_audio_path(recording)
         await session.commit()

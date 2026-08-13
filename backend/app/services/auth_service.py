@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import jwt
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -65,9 +66,17 @@ class AuthService:
             raise AuthError("このメールアドレスは既に登録されています。")
         if await self._users.get_by_username(username) is not None:
             raise AuthError("このユーザー名は既に使用されています。")
-        user = await self._users.create(
-            email=email, username=username, password_hash=hash_password(password)
-        )
+        try:
+            user = await self._users.create(
+                email=email, username=username, password_hash=hash_password(password)
+            )
+        except IntegrityError as exc:
+            # 上のget_by_email/get_by_usernameチェックとこのINSERTの間に、
+            # 同じメール/ユーザー名での別リクエストが割り込むレースは理論上
+            # 起こりうる（極めて低頻度）。DBのUNIQUE制約自体は二重登録を
+            # 正しく防ぐが、素のIntegrityError（→生の500エラー）として
+            # 漏らさず、通常の重複時と同じ案内文言に倒す。
+            raise AuthError("このメールアドレスまたはユーザー名は既に登録されています。") from exc
         await _send_best_effort(
             lambda: self._email.send_registration_complete(to_email=email, username=username),
             what="registration-complete",

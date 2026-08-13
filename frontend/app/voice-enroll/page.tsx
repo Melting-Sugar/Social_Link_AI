@@ -7,6 +7,7 @@ import { TextLink } from "@/components/ui/TextLink";
 import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import { ApiError } from "@/lib/api-client";
 import { useNavigationGuard } from "@/lib/navigation-guard-context";
+import { safeInternalPath } from "@/lib/safe-redirect";
 import { voiceProfileApi } from "@/lib/voice-profile-api";
 
 const MAX_RECORDING_SECONDS = 60; // 会話サポートの録音画面と同じ上限（§11.3）
@@ -14,7 +15,7 @@ const MAX_RECORDING_SECONDS = 60; // 会話サポートの録音画面と同じ�
 function VoiceEnrollForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const returnTo = searchParams.get("next") ?? "/settings";
+  const returnTo = safeInternalPath(searchParams.get("next"), "/settings");
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { isRecording, elapsedSeconds, audioBlob, error, start, stop, reset } = useAudioRecorder({

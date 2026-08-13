@@ -13,6 +13,11 @@ from app.schemas.auth import (
 )
 from app.services.auth_service import AuthError, AuthService
 
+# 個人開発フェーズにつき、このファイルの全エンドポイント（login/register/
+# forgot-username/forgot-password）にレート制限が一切ない — ログインは
+# 無制限のパスワード総当たりを許し、register/forgot-*は無制限のアカウント
+# 大量作成・メール大量送信（Resend枠消費）を許してしまう。商用化の際は
+# 必須（例：slowapiやリバースプロキシ側でIP/アカウント単位のレート制限）。
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 

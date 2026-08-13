@@ -2,7 +2,10 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_INSECURE_DEFAULT_JWT_SECRET = "change-me-in-.env"
 
 # Project root, resolved from this file's own location rather than the
 # process's cwd — the same class of bug found in frontend/lib/
@@ -32,7 +35,7 @@ class Settings(BaseSettings):
 
     # Auth — §5, §11.2. JWT access token is short-lived; refresh token is the
     # long-lived, httpOnly-cookie-held one, checked against RefreshToken (DB).
-    jwt_secret_key: str = "change-me-in-.env"
+    jwt_secret_key: str = _INSECURE_DEFAULT_JWT_SECRET
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 30
@@ -99,6 +102,44 @@ class Settings(BaseSettings):
     # 処理時間がリアルタイム比1倍程度で安定している範囲に収める。録音中
     # チャンク並行投稿による長時間対応は次のステップ#1のベンダー確認待ち）
     max_recording_seconds: int = 60
+
+    @model_validator(mode="after")
+    def _reject_dev_defaults_in_prod(self) -> "Settings":
+        # These fields all default to something that only makes sense on a
+        # developer's own machine. Left unset in a real deployment, each
+        # fails differently — some loudly (DATABASE_URL/REDIS_URL: nothing
+        # is listening, connection refused at startup; CORS_ALLOWED_ORIGINS:
+        # every request from the real frontend origin is browser-blocked,
+        # obvious immediately) and some silently (FRONTEND_BASE_URL: the
+        # app runs fine, but every password-reset email links to
+        # http://localhost:3000 — dead for any real user, and nothing
+        # anywhere surfaces that as an error). Reject all of them up front
+        # in prod rather than let each one fail in its own confusing way
+        # later. HS256 is a shared-secret signature — anyone holding the
+        # exact JWT_SECRET_KEY string can forge a valid access token for
+        # any user_id with no password needed, and the default is the
+        # literal, publicly-visible string committed in this file.
+        if self.environment != "prod":
+            return self
+
+        problems: list[str] = []
+        if self.jwt_secret_key == _INSECURE_DEFAULT_JWT_SECRET:
+            problems.append("JWT_SECRET_KEY is still the insecure default")
+        if "localhost" in self.database_url:
+            problems.append("DATABASE_URL still points at localhost")
+        if "localhost" in self.redis_url:
+            problems.append("REDIS_URL still points at localhost")
+        if "localhost" in self.frontend_base_url:
+            problems.append("FRONTEND_BASE_URL still points at localhost")
+        if any("localhost" in origin for origin in self.cors_allowed_origins):
+            problems.append("CORS_ALLOWED_ORIGINS still contains a localhost origin")
+        if problems:
+            raise ValueError(
+                "Refusing to start with ENVIRONMENT=prod and dev-only settings: "
+                + "; ".join(problems)
+                + ". Set real values in .env before deploying."
+            )
+        return self
 
 
 @lru_cache

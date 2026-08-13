@@ -26,3 +26,8 @@ export const usernameSchema = z
   .max(64, "ユーザー名は3〜64文字で入力してください。");
 
 export const emailSchema = z.string().email("メールアドレスの形式が正しくありません。");
+
+// バックエンドのstatement_check.py / record.pyのField(max_length)と揃える
+// — LLMに渡す自由記述フィールドのコスト・DoS対策（§13関連指摘）。
+export const FREE_TEXT_MAX_LENGTH = 400;
+export const FREE_TEXT_MAX_LENGTH_MESSAGE = `送信できるのは${FREE_TEXT_MAX_LENGTH}字までです。`;

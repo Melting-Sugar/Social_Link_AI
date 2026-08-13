@@ -1,7 +1,7 @@
 import uuid
 from datetime import date as date_type
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.models.enums import Condition
 
@@ -18,6 +18,13 @@ class CreateRecordRequest(BaseModel):
     next_goal: str | None = None
     memo: str | None = None
     summary_bullets: list[str]
+
+    @field_validator("next_goal", "memo")
+    @classmethod
+    def free_text_length(cls, v: str | None) -> str | None:
+        if v is not None and len(v) > 400:
+            raise ValueError("送信できるのは400字までです。")
+        return v
 
 
 class RecordResponse(BaseModel):

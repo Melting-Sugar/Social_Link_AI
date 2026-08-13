@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { SCENE_LABELS, type Scene } from "@/lib/conversation-api";
 import { statementCheckApi, type StatementCheckResponse } from "@/lib/statement-check-api";
+import { FREE_TEXT_MAX_LENGTH, FREE_TEXT_MAX_LENGTH_MESSAGE } from "@/lib/validation";
 
 const SCENES: Scene[] = ["school_university", "workplace", "first_meeting", "friend", "romantic"];
 
@@ -12,9 +13,12 @@ export default function StatementCheckPage() {
   const [result, setResult] = useState<StatementCheckResponse | null>(null);
   const [isChecking, setIsChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const isCheckingRef = useRef(false);
+  const isTooLong = statementText.length > FREE_TEXT_MAX_LENGTH;
 
   const handleCheck = async () => {
-    if (!statementText.trim()) return;
+    if (!statementText.trim() || isTooLong || isCheckingRef.current) return;
+    isCheckingRef.current = true;
     setIsChecking(true);
     setError(null);
     setResult(null);
@@ -24,6 +28,7 @@ export default function StatementCheckPage() {
     } catch {
       setError("判定に失敗しました。もう一度お試しください。");
     } finally {
+      isCheckingRef.current = false;
       setIsChecking(false);
     }
   };
@@ -63,8 +68,13 @@ export default function StatementCheckPage() {
             value={statementText}
             onChange={(e) => setStatementText(e.target.value)}
             rows={4}
+            aria-invalid={isTooLong || undefined}
             className="rounded-xl border border-line bg-surface px-3.5 py-3 text-[14px] text-ink outline-none focus-visible:outline-2 focus-visible:outline-ink"
           />
+          <p className={`text-right text-[10.5px] ${isTooLong ? "text-ink" : "text-ink-soft"}`}>
+            {statementText.length}/{FREE_TEXT_MAX_LENGTH}
+          </p>
+          {isTooLong && <p className="text-[12px] text-ink">{FREE_TEXT_MAX_LENGTH_MESSAGE}</p>}
         </div>
 
         {error && <p className="text-[12px] text-ink">{error}</p>}
@@ -72,7 +82,7 @@ export default function StatementCheckPage() {
         <button
           type="button"
           onClick={handleCheck}
-          disabled={isChecking || !statementText.trim()}
+          disabled={isChecking || !statementText.trim() || isTooLong}
           className="rounded-2xl bg-coral px-4 py-[15px] text-[14.5px] font-bold text-on-accent transition-colors active:bg-coral-strong disabled:opacity-50"
         >
           {isChecking ? "確認中..." : "確認する"}

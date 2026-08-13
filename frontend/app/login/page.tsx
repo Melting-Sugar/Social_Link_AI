@@ -12,6 +12,7 @@ import { TextLink } from "@/components/ui/TextLink";
 import { ApiError } from "@/lib/api-client";
 import { authApi } from "@/lib/auth-api";
 import { useAuth } from "@/lib/auth-context";
+import { safeInternalPath } from "@/lib/safe-redirect";
 
 const schema = z.object({
   identifier: z.string().min(1, "メールアドレスまたはユーザー名を入力してください。"),
@@ -36,7 +37,7 @@ function LoginForm() {
     try {
       const { access_token } = await authApi.login(values);
       login(access_token);
-      router.push(searchParams.get("next") ?? "/");
+      router.push(safeInternalPath(searchParams.get("next"), "/"));
     } catch (err) {
       setFormError(err instanceof ApiError ? err.message : "ログインに失敗しました。");
     }

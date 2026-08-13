@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { conversationApi, SCENE_LABELS, type Scene } from "@/lib/conversation-api";
 import { useAuth } from "@/lib/auth-context";
 import { voiceProfileApi } from "@/lib/voice-profile-api";
@@ -19,6 +19,7 @@ const SCENE_COLORS: Record<Scene, string> = {
 export default function ScenePage() {
   const router = useRouter();
   const [isCreating, setIsCreating] = useState(false);
+  const isCreatingRef = useRef(false);
   const { isAuthenticated, isLoading: authLoading } = useAuth();
 
   // proxy.ts can only check for a refresh-token cookie's presence, not
@@ -45,11 +46,14 @@ export default function ScenePage() {
   }, [profileStatus, router]);
 
   const handleSelect = async (scene: Scene) => {
+    if (isCreatingRef.current) return;
+    isCreatingRef.current = true;
     setIsCreating(true);
     try {
       const conversation = await conversationApi.create(scene);
       router.push(`/conversation/${conversation.id}`);
     } finally {
+      isCreatingRef.current = false;
       setIsCreating(false);
     }
   };

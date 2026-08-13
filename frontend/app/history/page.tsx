@@ -1,12 +1,13 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { CONDITION_LABELS, recordApi } from "@/lib/record-api";
 
 export default function HistoryPage() {
   const queryClient = useQueryClient();
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const deletingIdRef = useRef<string | null>(null);
 
   const { data: records, isLoading } = useQuery({
     queryKey: ["records"],
@@ -14,11 +15,14 @@ export default function HistoryPage() {
   });
 
   const handleDelete = async (recordId: string) => {
+    if (deletingIdRef.current !== null) return;
+    deletingIdRef.current = recordId;
     setDeletingId(recordId);
     try {
       await recordApi.delete(recordId);
       await queryClient.invalidateQueries({ queryKey: ["records"] });
     } finally {
+      deletingIdRef.current = null;
       setDeletingId(null);
     }
   };

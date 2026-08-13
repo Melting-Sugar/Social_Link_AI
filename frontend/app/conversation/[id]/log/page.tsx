@@ -1,8 +1,9 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { CONDITION_LABELS, recordApi, type Condition } from "@/lib/record-api";
+import { FREE_TEXT_MAX_LENGTH, FREE_TEXT_MAX_LENGTH_MESSAGE } from "@/lib/validation";
 
 const CONDITIONS: Condition[] = ["very_good", "good", "tired", "unwell"];
 
@@ -15,12 +16,21 @@ export default function ConversationLogPage() {
   const [memo, setMemo] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const isSubmittingRef = useRef(false);
+  const isNextGoalTooLong = nextGoal.length > FREE_TEXT_MAX_LENGTH;
+  const isMemoTooLong = memo.length > FREE_TEXT_MAX_LENGTH;
 
   const handleSubmit = async () => {
     if (!condition) {
       setError("体調を選択してください。");
       return;
     }
+    if (isNextGoalTooLong || isMemoTooLong) {
+      setError(FREE_TEXT_MAX_LENGTH_MESSAGE);
+      return;
+    }
+    if (isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
     setIsSubmitting(true);
     setError(null);
     try {
@@ -38,6 +48,7 @@ export default function ConversationLogPage() {
     } catch {
       setError("記録の保存に失敗しました。もう一度お試しください。");
     } finally {
+      isSubmittingRef.current = false;
       setIsSubmitting(false);
     }
   };
@@ -89,8 +100,12 @@ export default function ConversationLogPage() {
             id="next-goal"
             value={nextGoal}
             onChange={(e) => setNextGoal(e.target.value)}
+            aria-invalid={isNextGoalTooLong || undefined}
             className="rounded-xl border border-line bg-surface px-3.5 py-3 text-[14px] text-ink outline-none focus-visible:outline-2 focus-visible:outline-ink"
           />
+          <p className={`text-right text-[10.5px] ${isNextGoalTooLong ? "text-ink" : "text-ink-soft"}`}>
+            {nextGoal.length}/{FREE_TEXT_MAX_LENGTH}
+          </p>
         </div>
 
         <div className="flex flex-col gap-1.5">
@@ -102,8 +117,12 @@ export default function ConversationLogPage() {
             value={memo}
             onChange={(e) => setMemo(e.target.value)}
             rows={3}
+            aria-invalid={isMemoTooLong || undefined}
             className="rounded-xl border border-line bg-surface px-3.5 py-3 text-[14px] text-ink outline-none focus-visible:outline-2 focus-visible:outline-ink"
           />
+          <p className={`text-right text-[10.5px] ${isMemoTooLong ? "text-ink" : "text-ink-soft"}`}>
+            {memo.length}/{FREE_TEXT_MAX_LENGTH}
+          </p>
         </div>
 
         {error && <p className="text-[12px] text-ink">{error}</p>}
@@ -111,7 +130,7 @@ export default function ConversationLogPage() {
         <button
           type="button"
           onClick={handleSubmit}
-          disabled={isSubmitting}
+          disabled={isSubmitting || isNextGoalTooLong || isMemoTooLong}
           className="rounded-2xl bg-coral px-4 py-[15px] text-[14.5px] font-bold text-on-accent transition-colors active:bg-coral-strong disabled:opacity-50"
         >
           {isSubmitting ? "記録中..." : "記録する"}

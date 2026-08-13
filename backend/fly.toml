@@ -1,0 +1,45 @@
+# Fly.io deploy config for the backend — one image (backend/Dockerfile),
+# three always-on processes (api / worker / beat), matching
+# infra/docker-compose.yml's local-dev shape. `app` must be globally
+# unique across all of Fly.io — change it before the first `fly launch`/
+# `fly deploy` if "social-link-ai-backend" is already taken.
+app = "social-link-ai-backend"
+primary_region = "nrt" # Tokyo — closest region to the expected user base
+
+[build]
+
+[processes]
+api = "uvicorn app.main:app --host 0.0.0.0 --port 8000"
+worker = "celery -A app.core.celery_app worker --loglevel=info"
+beat = "celery -A app.core.celery_app beat --loglevel=info"
+
+# Runs once, in a temporary machine, before a new release reaches any of
+# the processes above — the idiomatic Fly.io way to apply DB migrations
+# exactly once per deploy rather than racing three processes that would
+# otherwise each try it on every boot (see docs/依頼者に確認していただきたいこと.txt
+# — this was previously a manual step).
+[deploy]
+release_command = "alembic upgrade head"
+
+[http_service]
+internal_port = 8000
+force_https = true
+auto_stop_machines = false
+auto_start_machines = true
+min_machines_running = 1
+processes = ["api"]
+
+[[vm]]
+size = "shared-cpu-1x"
+memory = "512mb"
+processes = ["api"]
+
+[[vm]]
+size = "shared-cpu-1x"
+memory = "1gb" # PyTorch/SpeechBrain (speaker-id extra) needs more headroom than the api process
+processes = ["worker"]
+
+[[vm]]
+size = "shared-cpu-1x"
+memory = "256mb"
+processes = ["beat"]

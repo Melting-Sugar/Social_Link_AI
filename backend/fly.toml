@@ -49,12 +49,16 @@ processes = ["api"]
 
 [[vm]]
 size = "shared-cpu-1x"
-memory = "512mb"
+memory = "1gb" # POST /api/voice-profile loads the same PyTorch/SpeechBrain
+# model inline in this process (app/services/voice_enrollment_service.py
+# calls it synchronously, not via Celery) — 512mb OOM-killed uvicorn
+# mid-model-load in production; matches the worker's allocation below
+# for the same reason.
 processes = ["api"]
 
 [[vm]]
 size = "shared-cpu-1x"
-memory = "1gb" # PyTorch/SpeechBrain (speaker-id extra) needs more headroom than the api process
+memory = "1gb" # PyTorch/SpeechBrain (speaker-id extra) needs more headroom than a bare API process
 processes = ["worker"]
 
 [[vm]]

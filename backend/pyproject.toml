@@ -43,6 +43,21 @@ dev = [
     "ruff>=0.7",
 ]
 
+# PyPI's default torch/torchaudio wheels bundle full CUDA runtime
+# libraries (nvidia-cublas, nvidia-cudnn, etc.) meant for GPU machines —
+# multiple GB of dead weight on Fly.io's CPU-only VMs, and enough to blow
+# past Fly's 8GB uncompressed image limit (see backend/Dockerfile: the
+# ecapa_local speaker-id provider only ever runs on CPU here). Pin both
+# to PyTorch's own CPU-only wheel index instead.
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+torchaudio = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
 [tool.ruff]
 line-length = 100
 

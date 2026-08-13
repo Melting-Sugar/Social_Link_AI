@@ -47,9 +47,20 @@ class EcapaLocalSpeakerIdProvider(SpeakerIdProvider):
         return await asyncio.to_thread(self._extract_embedding_sync, audio_path)
 
     def _extract_embedding_sync(self, audio_path: str) -> list[float]:
-        import torchaudio
+        # Not torchaudio.load(): as of torchaudio 2.9 it's a thin wrapper
+        # around torchcodec, which dynamically links against a specific
+        # FFmpeg ABI version — failed to load its shared library in
+        # production ("Could not load ... libtorchcodec_core4.so").
+        # soundfile (libsndfile) has no such version coupling. audio_path
+        # is always mono (temp_storage.py normalizes with `-ac 1`), so
+        # this 1D array becomes the (batch=1, samples) shape
+        # encode_batch() expects — the same shape torchaudio.load() used
+        # to produce for mono input via its channels-first (1, samples).
+        import soundfile as sf
+        import torch
 
         classifier = self._get_classifier()
-        signal, _sample_rate = torchaudio.load(audio_path)
+        data, _sample_rate = sf.read(audio_path, dtype="float32")
+        signal = torch.from_numpy(data).unsqueeze(0)
         embedding = classifier.encode_batch(signal)
         return embedding.squeeze().tolist()

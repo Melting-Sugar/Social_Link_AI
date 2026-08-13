@@ -5,13 +5,13 @@ import { useEffect } from "react";
 import { useAuth } from "@/lib/auth-context";
 
 /**
- * Second layer of the (authed) route group's auth gate — see
- * app/(authed)/layout.tsx for the first (server-side, cookie-presence-only)
- * layer. That layer only catches a *missing* refresh cookie; a *stale/
- * invalid* one still lets the request through (it can't validate the
- * token itself — see auth-context.tsx), so this client-side check is what
- * actually catches that case, the same way scene/page.tsx's one-off
- * version did before every (authed) route was wrapped here.
+ * The (authed) route group's entire auth gate — see app/(authed)/layout.tsx
+ * for why this is client-side only (frontend and backend intentionally
+ * don't share a parent domain, so the refresh cookie never reaches the
+ * frontend's own server; a server-side check would always see "no
+ * cookie", even for a genuinely logged-in visitor). Same pattern
+ * scene/page.tsx used one-off before every (authed) route was wrapped
+ * here.
  */
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();

@@ -1,28 +1,25 @@
-import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
 import { AuthGuard } from "@/components/AuthGuard";
 
-// Replaces proxy.ts's server-side gate for every route that requires a
-// session (everything except (guest)/, reset-password, terms, privacy —
-// see app/(guest)/layout.tsx for the mirror-image check). Next.js 16
-// locked Proxy to the Node.js runtime with no way to opt back into Edge
-// (see node_modules/next/dist/docs/.../file-conventions/proxy.md, "Runtime"
+// Replaces proxy.ts's gate for every route that requires a session
+// (everything except (guest)/, reset-password, terms, privacy — see
+// app/(guest)/layout.tsx for the mirror-image check). Next.js 16 locked
+// Proxy to the Node.js runtime with no way to opt back into Edge (see
+// node_modules/next/dist/docs/.../file-conventions/proxy.md, "Runtime"
 // section) — a runtime OpenNext's Cloudflare adapter doesn't yet support.
-// A layout Server Component isn't Proxy, so it isn't affected.
 //
-// This only catches a *missing* refresh cookie — cheap, and blocks
-// rendering before any protected content is ever sent, same guarantee
-// proxy.ts gave. It cannot validate the cookie itself (no signature/expiry
-// check possible server-side without a DB round trip on every navigation);
-// a stale/invalid-but-present cookie is caught by AuthGuard instead, once
-// the real Bearer-token refresh fails client-side.
-const REFRESH_COOKIE_NAME = "refresh_token";
-
-export default async function AuthedLayout({ children }: { children: React.ReactNode }) {
-  const cookieStore = await cookies();
-  if (!cookieStore.has(REFRESH_COOKIE_NAME)) {
-    redirect("/login");
-  }
-
+// This used to also do a server-side `cookies().has("refresh_token")`
+// check before rendering anything, mirroring proxy.ts's own "cheap
+// presence check, not real validation" property. Dropped once the
+// deploy topology was settled: frontend (Cloudflare) and backend
+// (Fly.io) sit on unrelated domains by design, so the refresh cookie —
+// scoped to the backend's own origin — never reaches this server at
+// all; the check would always see "missing" even for a genuinely
+// logged-in visitor and permanently redirect everyone to /login. Every
+// route in this group is a client component with no server-side data
+// fetching (confirmed by inspection), so AuthGuard alone is safe: the
+// brief shell rendered before its client-side check redirects never
+// contains real data, only whatever that page's initial (pre-fetch)
+// render already looked like.
+export default function AuthedLayout({ children }: { children: React.ReactNode }) {
   return <AuthGuard>{children}</AuthGuard>;
 }

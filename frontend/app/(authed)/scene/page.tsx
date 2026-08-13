@@ -20,17 +20,10 @@ export default function ScenePage() {
   const router = useRouter();
   const [isCreating, setIsCreating] = useState(false);
   const isCreatingRef = useRef(false);
-  const { isAuthenticated, isLoading: authLoading } = useAuth();
-
-  // proxy.ts can only check for a refresh-token cookie's presence, not
-  // validate it (§5) — a stale/expired cookie still lets the request
-  // through server-side. This client-side check is the fallback that
-  // actually catches that case instead of silently rendering nothing.
-  useEffect(() => {
-    if (!authLoading && !isAuthenticated) {
-      router.replace("/login?next=/scene");
-    }
-  }, [authLoading, isAuthenticated, router]);
+  // The stale-cookie fallback this page used to do itself is now handled
+  // generically by AuthGuard (app/(authed)/layout.tsx) for every route in
+  // this group.
+  const { isAuthenticated } = useAuth();
 
   // §12.3: 会話サポート開始時に声紋未登録ならE-①へ自動リダイレクト。
   const { data: profileStatus, isLoading } = useQuery({

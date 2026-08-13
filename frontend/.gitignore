@@ -17,6 +17,10 @@
 /.next/
 /out/
 
+# cloudflare (opennextjs-cloudflare / wrangler)
+/.open-next/
+/.wrangler/
+
 # production
 /build
 

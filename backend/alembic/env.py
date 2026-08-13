@@ -19,8 +19,14 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # Pull the DB URL from app settings (.env) instead of duplicating it in
-# alembic.ini.
-config.set_main_option("sqlalchemy.url", get_settings().database_url)
+# alembic.ini. `%` must be escaped as `%%` here — Alembic's Config stores
+# this via a ConfigParser with interpolation enabled, which otherwise
+# raises ValueError on a raw `%` (e.g. from a URL-encoded `%25` in a
+# password). get_main_option()/get_section() below un-escape it back to
+# a single `%` on read, so the URL SQLAlchemy sees is unchanged.
+config.set_main_option(
+    "sqlalchemy.url", get_settings().database_url.replace("%", "%%")
+)
 
 target_metadata = Base.metadata
 

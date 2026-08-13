@@ -23,12 +23,8 @@ SPEAKER_ID_PROVIDER = "ecapa_local"
 PIPELINE_MODE = "hybrid"
 TEMP_AUDIO_DIR = "/tmp/social-link-audio"
 MAX_RECORDING_SECONDS = "60"
-# TODO: placeholders — update once the Cloudflare frontend URL is known
-# (config.py's startup guard only rejects a literal "localhost", so
-# these placeholders let the app boot, but login won't actually work
-# correctly against the real frontend until they're the real URL).
-FRONTEND_BASE_URL = "https://placeholder.example.com"
-CORS_ALLOWED_ORIGINS = '["https://placeholder.example.com"]'
+FRONTEND_BASE_URL = "https://social-link-ai-frontend.social-link-ai.workers.dev"
+CORS_ALLOWED_ORIGINS = '["https://social-link-ai-frontend.social-link-ai.workers.dev"]'
 
 [processes]
 api = "uvicorn app.main:app --host 0.0.0.0 --port 8000"

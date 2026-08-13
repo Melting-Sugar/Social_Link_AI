@@ -29,7 +29,11 @@ async def save_upload_and_normalize(raw_bytes: bytes, *, original_filename: str)
     raw_path = temp_dir / f"{uuid.uuid4()}{raw_suffix}"
     raw_path.write_bytes(raw_bytes)
 
-    wav_path = temp_dir / f"{raw_path.stem}.wav"
+    # A fresh uuid, not raw_path.stem — if original_filename already ends
+    # in .wav (raw_suffix == ".wav"), reusing the stem here would make
+    # this identical to raw_path, handing ffmpeg the same file as both
+    # -i and its output target.
+    wav_path = temp_dir / f"{uuid.uuid4()}.wav"
     try:
         await asyncio.to_thread(
             subprocess.run,

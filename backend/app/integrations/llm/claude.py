@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from anthropic import AsyncAnthropic
 
 from app.core.config import get_settings
+from app.integrations.exceptions import VendorResponseError
 
 MODEL_SONNET_5 = "claude-sonnet-5"
 MODEL_HAIKU_4_5 = "claude-haiku-4-5-20251001"
@@ -70,6 +71,17 @@ class ConversationReport:
     relationship_distance: str
     suggestion_category: str
     suggestion_text: str
+
+
+@dataclass
+class ThirdPartyConversationReport:
+    """2026-08-15ユーザー指示: 声紋照合で自分がこの会話に参加していないと
+    判定された場合のレポート（ConversationReportの姉妹形）。
+    relationship_distance・suggestionは自分視点の項目のため存在しない。"""
+
+    flow: str
+    reaction_a: str
+    reaction_b: str
 
 
 @dataclass
@@ -178,6 +190,48 @@ _REPORT_TOOL = {
     },
 }
 
+# 2026-08-15ユーザー指示: 声紋照合で自分がこの会話に参加していないと
+# 判定された場合の専用プロンプト。_REPORT_SYSTEM_PROMPTと違い「あなた」
+# という一人称の当事者がいないため、参加者A・参加者Bという第三者視点で
+# 書く。relationship_distance・suggestionは自分視点の項目のため求めない
+# （ユーザー指示: 「次に話すと良いことはなしで構いません」）。
+_THIRD_PARTY_REPORT_SYSTEM_PROMPT = """\
+あなたはASD等コミュニケーションに難がある方の対話を支援するアプリのバックエンドで、
+会話分析を行うアシスタントです。1ラウンド分の会話の文字起こし（話者は参加者A・
+参加者Bと話者識別済みで、このアプリの利用者本人はこの会話に参加していません）と、
+可能であれば声のトーンから推定した感情スコアを受け取り、構造化されたレポートを
+生成します。これは利用者が録音した第三者同士の会話を、利用者が後から確認するための
+ものです。
+
+出力は必ずsubmit_third_party_reportツールで返してください。各フィールドの方針：
+
+- flow・reaction_a・reaction_bの文中で話者に言及する際は、必ず「参加者A」
+  「参加者B」という日本語で書いてください。
+- 場面（例：職場、初対面）ごとに、期待される言葉遣いや距離感の基準は異なります。
+  場面を踏まえた上でflow・reaction_a・reaction_bを解釈してください。
+- プロソディ感情スコアが提供されている場合、各パラメータには値域が付記されています。
+  値域に対する相対的な高さ・低さで判断してください。
+- flow（会話の流れ）、reaction_a（参加者Aの様子）、reaction_b（参加者Bの様子）:
+  あなたの解釈が入る項目です。「〜になっています」のような言い切りではなく、
+  「〜ように見えます」等、推定であることが伝わる言い回しにしてください。
+- プロソディの感情スコアが提供されていない場合は、文字起こしの内容のみから
+  判断し、その旨さらに慎重な推定表現を使ってください。
+"""
+
+_THIRD_PARTY_REPORT_TOOL = {
+    "name": "submit_third_party_report",
+    "description": "自分が参加していない第三者同士の会話の分析レポート（話題を除く）を提出する",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "flow": {"type": "string"},
+            "reaction_a": {"type": "string", "description": "参加者Aの様子・反応"},
+            "reaction_b": {"type": "string", "description": "参加者Bの様子・反応"},
+        },
+        "required": ["flow", "reaction_a", "reaction_b"],
+    },
+}
+
 _STATEMENT_CHECK_SYSTEM_PROMPT = """\
 あなたはASD等コミュニケーションに難がある方向けの発言チェック機能のアシスタント
 です。ユーザーがこれから言おうとしている発言案を、場面や相手との関係性を踏まえて
@@ -283,6 +337,36 @@ class ClaudeClient:
         data = _extract_tool_input(response, "submit_conversation_report")
         return ConversationReport(**data)
 
+    async def generate_third_party_conversation_report(
+        self,
+        *,
+        transcript: str,
+        prosody_scores_a: dict[str, float],
+        prosody_scores_b: dict[str, float],
+        scene: str,
+    ) -> ThirdPartyConversationReport:
+        """2026-08-15ユーザー指示: 自分がこの会話に参加していないと判定
+        された場合の別プロンプト（generate_conversation_reportの姉妹形）。
+        mood_context/previous_round_contextを受け取らないのは、どちらも
+        自分視点の文脈情報のため（この録音の主体は自分ではない）。"""
+        user_content = (
+            f"場面: {_SCENE_LABELS_JA.get(scene, scene)}\n"
+            f"文字起こし:\n{transcript}\n\n"
+            f"参加者Aのプロソディ感情スコア: {_format_prosody_scores(prosody_scores_a)}\n"
+            f"参加者Bのプロソディ感情スコア: {_format_prosody_scores(prosody_scores_b)}\n"
+        )
+
+        response = await self._client.messages.create(
+            model=MODEL_SONNET_5,
+            max_tokens=1024,
+            system=_THIRD_PARTY_REPORT_SYSTEM_PROMPT,
+            tools=[_THIRD_PARTY_REPORT_TOOL],
+            tool_choice={"type": "tool", "name": "submit_third_party_report"},
+            messages=[{"role": "user", "content": user_content}],
+        )
+        data = _extract_tool_input(response, "submit_third_party_report")
+        return ThirdPartyConversationReport(**data)
+
     async def check_statement(
         self, *, statement_text: str, scene: str, relationship_context: str | None = None
     ) -> StatementCheckResult:
@@ -329,4 +413,4 @@ def _extract_tool_input(response, tool_name: str) -> dict:
     for block in response.content:
         if block.type == "tool_use" and block.name == tool_name:
             return block.input
-    raise RuntimeError(f"Claude response did not include the expected {tool_name!r} tool call")
+    raise VendorResponseError(f"Claude response did not include the expected {tool_name!r} tool call")

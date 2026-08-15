@@ -70,6 +70,10 @@ class RecordingRepository:
         recording.single_speaker_detected = value
         await self._session.flush()
 
+    async def set_self_absent(self, recording: Recording, value: bool) -> None:
+        recording.self_absent = value
+        await self._session.flush()
+
     async def set_topic(self, recording: Recording, topic: str) -> None:
         recording.topic = topic
         recording.topic_ready = True
@@ -83,6 +87,11 @@ class RecordingRepository:
     async def set_reaction(self, recording: Recording, other_reaction: str) -> None:
         recording.other_reaction = other_reaction
         recording.reaction_ready = True
+        await self._session.flush()
+
+    async def set_reaction_2(self, recording: Recording, other_reaction_2: str) -> None:
+        recording.other_reaction_2 = other_reaction_2
+        recording.reaction_2_ready = True
         await self._session.flush()
 
     async def set_relationship(self, recording: Recording, relationship_distance: str) -> None:

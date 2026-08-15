@@ -58,6 +58,12 @@ class Recording(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     # 話者分離で片方しか検出できなかった場合でもレポート生成は続行するが
     # （2026-08-12ユーザー指示）、その旨をUIで正直に開示するためのフラグ。
     single_speaker_detected: Mapped[bool] = mapped_column(default=False)
+    # 2026-08-15ユーザー指示: 声紋照合で両者とも自分の声紋に一致しなかった
+    # 場合、「自分は会話に参加していない」とみなし、他者2名の会話として
+    # 分析する（analysis_service.py _resolve_speakers参照）。この場合
+    # relationship_distance・suggestionは自分視点の項目のため生成せず、
+    # other_reaction/other_reaction_2に2名分の反応を格納する。
+    self_absent: Mapped[bool] = mapped_column(default=False)
 
     # 機能① の出力（§2, §11.1 A-④）。「会話の流れ」「相手の反応」「関係性の
     # 距離感」はAIの解釈が介在するため、断定調ではなく推定を示す文言で
@@ -68,6 +74,9 @@ class Recording(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     flow_ready: Mapped[bool] = mapped_column(default=False)
     other_reaction: Mapped[str | None] = mapped_column(Text, nullable=True)
     reaction_ready: Mapped[bool] = mapped_column(default=False)
+    # self_absent時のみ使用: other_reactionが1人目、こちらが2人目の反応。
+    other_reaction_2: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reaction_2_ready: Mapped[bool] = mapped_column(default=False)
     relationship_distance: Mapped[RelationshipDistance | None] = mapped_column(
         Enum(RelationshipDistance, native_enum=False), nullable=True
     )

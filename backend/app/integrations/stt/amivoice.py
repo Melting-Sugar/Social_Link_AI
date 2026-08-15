@@ -5,6 +5,7 @@ from pathlib import Path
 import httpx
 
 from app.core.config import get_settings
+from app.integrations.exceptions import VendorResponseError
 from app.integrations.stt.base import STTProvider, STTResult, STTSegment
 
 _SUBMIT_URL = "https://acp-api-async.amivoice.com/v2/recognitions"
@@ -76,7 +77,7 @@ class AmiVoiceProvider(STTProvider):
         payload = response.json()
         session_id = payload.get("sessionid")
         if not session_id:
-            raise RuntimeError(f"AmiVoice submission failed: {payload}")
+            raise VendorResponseError(f"AmiVoice submission failed: {payload}")
         return session_id
 
     async def _poll_until_done(self, client: httpx.AsyncClient, session_id: str) -> dict:
@@ -93,7 +94,7 @@ class AmiVoiceProvider(STTProvider):
             if status == "completed":
                 return data
             if status == "error":
-                raise RuntimeError(f"AmiVoice recognition failed: {data.get('message') or data}")
+                raise VendorResponseError(f"AmiVoice recognition failed: {data.get('message') or data}")
             if time.monotonic() > deadline:
                 raise TimeoutError(
                     f"AmiVoice recognition timed out after {_POLL_TIMEOUT_SECONDS}s "

@@ -17,6 +17,7 @@ class RecordingResponse(BaseModel):
     current_stage: AnalysisStage | None
     error_message: str | None
     single_speaker_detected: bool
+    self_absent: bool
 
     topic: str | None
     topic_ready: bool
@@ -24,6 +25,8 @@ class RecordingResponse(BaseModel):
     flow_ready: bool
     other_reaction: str | None
     reaction_ready: bool
+    other_reaction_2: str | None
+    reaction_2_ready: bool
     relationship_distance: RelationshipDistance | None
     relationship_ready: bool
     suggestion_category: SuggestionCategory | None

@@ -81,17 +81,19 @@ class Settings(BaseSettings):
     # base app runnable without the optional heavy PyTorch dependency group.
     speaker_id_provider: Literal["ecapa_local", "pyannote_local", "none"] = "none"
 
-    # §12 自分/相手の声紋照合の信頼度しきい値。best_similarityがこれ未満、
-    # または2位候補との差がmin_margin未満なら識別失敗として扱う。
+    # §12 自分/相手の声紋照合の信頼度しきい値。best_similarityがこれ未満なら
+    # 自分はこの会話に参加していないとみなす（analysis_service.py
+    # _resolve_speakers参照）。
     # 2026-08-15: 本番の実会話音声で調整。0.5だった頃は本人の発話でも
-    # 0.32〜0.47程度にしか届かず(margin自体は健全 — 別人の合成音声は
-    # 0.15と明確に低かった)、本人まで弾かれて「話者の識別に失敗しました」
-    # が頻発していた。観測された本人スコアの最小値より少し低い0.3に
-    # 変更。marginは実測で問題なかったためそのまま。サンプル数はまだ
-    # 少ない（1人分）ため暫定値 — 引き続きanalysis_service.pyのログで
-    # 実測値を見ながら調整する想定。
+    # 0.32〜0.47程度にしか届かず、本人まで弾かれて「話者の識別に失敗
+    # しました」が頻発していた（別人の合成音声は0.15と明確に低かった）。
+    # 観測された本人スコアの最小値より少し低い0.3に変更。同日、2位候補
+    # との差を見るmin_marginチェックは廃止した（本人の発話同士でも
+    # 0.15程度のばらつきがあり、僅差を理由に本人まで弾いてしまっていた
+    # ため — 2位の値に関わらずbest_similarityのみで判定する方式に変更）。
+    # サンプル数はまだ少ない（1人分）ため暫定値 — 引き続き
+    # analysis_service.pyのログで実測値を見ながら調整する想定。
     speaker_id_min_similarity: float = 0.3
-    speaker_id_min_margin: float = 0.15
 
     # §4.2 — HybridPipeline is the recommended/default path; RealtimeOnly is
     # documented but not yet implemented (see integrations/llm).

@@ -82,11 +82,15 @@ class Settings(BaseSettings):
     speaker_id_provider: Literal["ecapa_local", "pyannote_local", "none"] = "none"
 
     # §12 自分/相手の声紋照合の信頼度しきい値。best_similarityがこれ未満、
-    # または2位候補との差がmin_margin未満なら識別失敗として扱う。値は
-    # プレースホルダー — 合成音声でのPoC（0.88 vs 0.20）はあるが、実運用の
-    # 生録音での検証はまだ行っていない。ユーザー自身の実音声での試用結果を
-    # 踏まえて調整する想定（要件定義書参照）。
-    speaker_id_min_similarity: float = 0.5
+    # または2位候補との差がmin_margin未満なら識別失敗として扱う。
+    # 2026-08-15: 本番の実会話音声で調整。0.5だった頃は本人の発話でも
+    # 0.32〜0.47程度にしか届かず(margin自体は健全 — 別人の合成音声は
+    # 0.15と明確に低かった)、本人まで弾かれて「話者の識別に失敗しました」
+    # が頻発していた。観測された本人スコアの最小値より少し低い0.3に
+    # 変更。marginは実測で問題なかったためそのまま。サンプル数はまだ
+    # 少ない（1人分）ため暫定値 — 引き続きanalysis_service.pyのログで
+    # 実測値を見ながら調整する想定。
+    speaker_id_min_similarity: float = 0.3
     speaker_id_min_margin: float = 0.15
 
     # §4.2 — HybridPipeline is the recommended/default path; RealtimeOnly is

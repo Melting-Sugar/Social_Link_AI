@@ -1,11 +1,13 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useNavigationGuard } from "@/lib/navigation-guard-context";
 import { CONDITION_LABELS, recordApi, type Condition } from "@/lib/record-api";
 import { FREE_TEXT_MAX_LENGTH, FREE_TEXT_MAX_LENGTH_MESSAGE } from "@/lib/validation";
 
 const CONDITIONS: Condition[] = ["very_good", "good", "tired", "unwell"];
+const UNSAVED_GUARD_MESSAGE = "今ここを押すとデータが記録されません。よろしいですか？";
 
 export default function ConversationLogPage() {
   const { id } = useParams<{ id: string }>();
@@ -17,6 +19,14 @@ export default function ConversationLogPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isSubmittingRef = useRef(false);
+
+  // A-⑥の保存（handleSubmit）をするまで、この会話は保存されない（§8） —
+  // フッターナビで離脱しかけたら警告する（2026-08-15ユーザー指示）。
+  const { setGuarded } = useNavigationGuard();
+  useEffect(() => {
+    setGuarded(true, UNSAVED_GUARD_MESSAGE);
+    return () => setGuarded(false);
+  }, [setGuarded]);
   const isNextGoalTooLong = nextGoal.length > FREE_TEXT_MAX_LENGTH;
   const isMemoTooLong = memo.length > FREE_TEXT_MAX_LENGTH;
 

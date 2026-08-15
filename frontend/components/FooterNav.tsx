@@ -60,7 +60,7 @@ const NAV_ITEMS = [
 // out (login/register/etc. don't have it at all).
 export function FooterNav() {
   const { isAuthenticated } = useAuth();
-  const { isGuarded } = useNavigationGuard();
+  const { isGuarded, guardMessage } = useNavigationGuard();
   const pathname = usePathname();
   const router = useRouter();
   const [pendingHref, setPendingHref] = useState<string | null>(null);
@@ -99,9 +99,7 @@ export function FooterNav() {
       {pendingHref && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 px-6">
           <div className="w-full max-w-xs rounded-2xl border border-line bg-surface p-4 shadow-app">
-            <p className="text-[13px] leading-relaxed text-ink">
-              録音（解析）を中断しますか？進行中の内容は失われます。
-            </p>
+            <p className="text-[13px] leading-relaxed text-ink">{guardMessage}</p>
             <div className="mt-3.5 flex gap-2">
               <button
                 type="button"

@@ -3,6 +3,9 @@
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { conversationApi } from "@/lib/conversation-api";
+import { useNavigationGuard } from "@/lib/navigation-guard-context";
+
+const UNSAVED_GUARD_MESSAGE = "今ここを押すとデータが記録されません。よろしいですか？";
 
 // A-⑤. §11.5: /log (A-⑥) needs these bullets too, but the backend never
 // persists an intermediate "pending summary" (raw transcripts aren't kept
@@ -15,6 +18,14 @@ export default function ConversationSummaryPage() {
   const router = useRouter();
   const [bullets, setBullets] = useState<string[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // A-⑥（/log側）の保存操作をするまで、この会話は保存されない（§8） —
+  // フッターナビで離脱しかけたら警告する（2026-08-15ユーザー指示）。
+  const { setGuarded } = useNavigationGuard();
+  useEffect(() => {
+    setGuarded(true, UNSAVED_GUARD_MESSAGE);
+    return () => setGuarded(false);
+  }, [setGuarded]);
 
   useEffect(() => {
     conversationApi

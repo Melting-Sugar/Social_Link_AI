@@ -22,7 +22,7 @@ function formatElapsed(seconds: number): string {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-type Phase = "recording" | "analyzing";
+type Phase = "recording" | "uploading" | "analyzing";
 
 export default function ConversationPage() {
   const { id } = useParams<{ id: string }>();
@@ -54,10 +54,24 @@ export default function ConversationPage() {
         setActiveRecordingId(res.id);
         setPhase("analyzing");
       })
-      .catch(() => setUploadError("録音のアップロードに失敗しました。もう一度お試しください。"));
+      .catch(() => {
+        setUploadError("録音のアップロードに失敗しました。もう一度お試しください。");
+        setPhase("recording");
+      });
     // elapsedSeconds is read once at upload time, not a reactive dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [audioBlob, id]);
+
+  // 2026-08-15ユーザー指摘: 録音停止ボタンを押してから画面が切り替わる
+  // までが遅く感じる件への対処。stop()自体はisRecordingを同期的にfalse
+  // にするが、フェーズはアップロードのfetchが返るまで"recording"の
+  // ままだったため、ボタンだけアイドル表示に戻り、それ以外は何も変化
+  // しない「固まって見える」区間があった。stop操作と同時にこのフェーズ
+  // へ即座に切り替える。
+  const handleStop = () => {
+    stop();
+    setPhase("uploading");
+  };
 
   const { data: recording } = useQuery({
     queryKey: ["recording", id, activeRecordingId],
@@ -70,12 +84,14 @@ export default function ConversationPage() {
     },
   });
 
-  // 録音中（録音画面かつ録音が作動している）・解析中はフッターナビでの
-  // 離脱を確認ダイアログでガードする（2026-08-12ユーザー指示）。
+  // 録音中（録音画面かつ録音が作動している）・アップロード中・解析中は
+  // フッターナビでの離脱を確認ダイアログでガードする（2026-08-12ユーザー
+  // 指示）。uploadingを含めていなかったため、停止ボタンを押した直後の
+  // アップロード中だけガードが外れる隙間があった（2026-08-15修正）。
   const { setGuarded } = useNavigationGuard();
   const isAnalyzing = phase === "analyzing" && recording?.status !== "completed" && recording?.status !== "failed";
   useEffect(() => {
-    setGuarded((phase === "recording" && isRecording) || isAnalyzing);
+    setGuarded((phase === "recording" && isRecording) || phase === "uploading" || isAnalyzing);
     return () => setGuarded(false);
   }, [phase, isRecording, isAnalyzing, setGuarded]);
 
@@ -95,11 +111,13 @@ export default function ConversationPage() {
           isRecording={isRecording}
           elapsedSeconds={elapsedSeconds}
           onStart={start}
-          onStop={stop}
+          onStop={handleStop}
           recorderError={error}
           uploadError={uploadError}
         />
       )}
+
+      {phase === "uploading" && <UploadingPhase />}
 
       {phase === "analyzing" && recording && recording.status === "failed" && (
         <FailedPhase message={recording.error_message} onRetry={handleRecordAgain} />
@@ -113,7 +131,7 @@ export default function ConversationPage() {
         />
       )}
 
-      {phase === "analyzing" && recording && recording.status !== "failed" && recording.status !== "completed" && (
+      {phase === "analyzing" && (!recording || (recording.status !== "failed" && recording.status !== "completed")) && (
         <AnalyzingPhase recording={recording} />
       )}
     </div>
@@ -180,16 +198,25 @@ function FailedPhase({ message, onRetry }: { message: string | null; onRetry: ()
   );
 }
 
-function AnalyzingPhase({ recording }: { recording: RecordingResponse }) {
+function UploadingPhase() {
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
+      <div className="h-8 w-8 animate-spin rounded-full border-[3px] border-line border-t-coral" />
+      <p className="text-[14.5px] font-bold text-ink">録音を送信しています...</p>
+    </div>
+  );
+}
+
+function AnalyzingPhase({ recording }: { recording: RecordingResponse | undefined }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
       <div className="h-8 w-8 animate-spin rounded-full border-[3px] border-line border-t-coral" />
       <p className="text-[14.5px] font-bold text-ink">解析中...</p>
       <p className="text-[11.5px] text-ink-soft">
-        {recording.current_stage ? ANALYSIS_STAGE_LABELS[recording.current_stage] : "準備しています..."}
+        {recording?.current_stage ? ANALYSIS_STAGE_LABELS[recording.current_stage] : "準備しています..."}
       </p>
       <p className="text-[10.5px] text-ink-soft">通常、60秒ほどで解析が完了します</p>
-      {recording.topic_ready && (
+      {recording?.topic_ready && (
         <div className="mt-3 w-full max-w-xs rounded-xl bg-coral-tint px-3.5 py-2.5 text-left text-[11.5px] font-bold text-ink">
           話題：{recording.topic}
         </div>
@@ -215,15 +242,32 @@ function ResultPhase({
             今回は片方の発言のみで解析しました。相手の反応など、判断できない項目があります。
           </div>
         )}
+        {/* 2026-08-15ユーザー指示: 声紋照合で自分がこの会話に参加していないと
+            判定された場合、その旨を明記する。 */}
+        {recording.self_absent && (
+          <div className="mb-3 rounded-xl bg-caution-tint px-3.5 py-2.5 text-[11px] leading-relaxed text-ink">
+            今回はあなたの声を検出できませんでした。第三者2名の会話として分析しています。
+          </div>
+        )}
         {/* §11.11: AI推定である旨を常時表示 */}
         <p className="mb-3 text-[10.5px] text-ink-soft">AIによる推定です。実際の状況と異なる場合があります。</p>
 
         <div className="flex flex-col gap-3.5">
           <Card eyebrow="現在の話題" body={recording.topic} />
-          <div className="grid grid-cols-2 gap-2.5">
-            <Card eyebrow="会話の流れ" body={recording.flow} />
-            <Card eyebrow="相手の反応" body={recording.other_reaction} />
-          </div>
+          {recording.self_absent ? (
+            <>
+              <Card eyebrow="会話の流れ" body={recording.flow} />
+              <div className="grid grid-cols-2 gap-2.5">
+                <Card eyebrow="参加者Aの反応" body={recording.other_reaction} />
+                <Card eyebrow="参加者Bの反応" body={recording.other_reaction_2} />
+              </div>
+            </>
+          ) : (
+            <div className="grid grid-cols-2 gap-2.5">
+              <Card eyebrow="会話の流れ" body={recording.flow} />
+              <Card eyebrow="相手の反応" body={recording.other_reaction} />
+            </div>
+          )}
           {recording.relationship_distance && (
             <Card eyebrow="関係性の距離感" body={RELATIONSHIP_DISTANCE_LABELS[recording.relationship_distance]} />
           )}

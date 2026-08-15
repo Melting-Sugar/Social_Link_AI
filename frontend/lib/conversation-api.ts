@@ -54,12 +54,15 @@ export interface RecordingResponse {
   current_stage: AnalysisStage | null;
   error_message: string | null;
   single_speaker_detected: boolean;
+  self_absent: boolean;
   topic: string | null;
   topic_ready: boolean;
   flow: string | null;
   flow_ready: boolean;
   other_reaction: string | null;
   reaction_ready: boolean;
+  other_reaction_2: string | null;
+  reaction_2_ready: boolean;
   relationship_distance: RelationshipDistance | null;
   relationship_ready: boolean;
   suggestion_category: SuggestionCategory | null;

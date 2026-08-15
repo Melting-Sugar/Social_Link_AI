@@ -311,6 +311,14 @@ class AnalysisService:
                 return SpeakerResolution(self_label=None, other_label=None)
             similarities[label] = self._speaker_id.cosine_similarity(embedding, voice_profile.embedding)
 
+        logger.info(
+            "speaker resolution similarities for user %s: %s (min_similarity=%.2f, min_margin=%.2f)",
+            user_id,
+            {label: round(score, 4) for label, score in similarities.items()},
+            self._settings.speaker_id_min_similarity,
+            self._settings.speaker_id_min_margin,
+        )
+
         if len(similarities) == 1:
             # 話者分離が1人分しか出なかったケース（実際にAzure/AmiVoiceどちら
             # でも起こりうると確認済み）。声紋照合でその1人が自分か相手かを
